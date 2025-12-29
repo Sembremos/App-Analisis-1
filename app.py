@@ -14,7 +14,7 @@ from streamlit_folium import st_folium
 st.set_page_config(page_title="CR | Cantones y estructuras", page_icon="🛰️", layout="wide")
 
 # =========================
-# ESTILO (IGUAL)
+# ESTILO (IGUAL + SOLO COLOR KPIs)
 # =========================
 st.markdown(
     """
@@ -23,14 +23,29 @@ st.markdown(
       .title{font-size: 28px; font-weight: 900; letter-spacing: -0.02em; margin-bottom: 2px;}
       .subtitle{color:#6b7280; margin-top:0px; margin-bottom: 14px;}
       .kpi-grid{display:flex; gap:14px; flex-wrap:wrap; margin-bottom: 10px;}
+
+      /* === KPI con color (nuevo) === */
       .kpi{
-        background:#ffffff; border:1px solid #e5e7eb; border-radius:18px;
-        padding:16px 18px; box-shadow:0 10px 25px rgba(0,0,0,0.06);
+        border-radius:18px;
+        padding:16px 18px;
+        box-shadow:0 10px 25px rgba(0,0,0,0.08);
         min-width: 240px; flex:1;
+        border:1px solid rgba(255,255,255,0.14);
+        color:#0b1220;
       }
-      .kpi-label{color:#111827; font-weight:800; font-size:14px; letter-spacing:0.01em;}
-      .kpi-value{color:#111827; font-weight:900; font-size:44px; margin-top:6px; line-height:1;}
-      .kpi-sub{color:#6b7280; font-size:12px; margin-top:6px;}
+      .kpi.kpi-cantones{
+        background: linear-gradient(135deg, rgba(99,102,241,0.22), rgba(59,130,246,0.10));
+        border:1px solid rgba(99,102,241,0.35);
+      }
+      .kpi.kpi-estructuras{
+        background: linear-gradient(135deg, rgba(16,185,129,0.22), rgba(34,197,94,0.10));
+        border:1px solid rgba(16,185,129,0.35);
+      }
+
+      .kpi-label{color:#e5e7eb; font-weight:800; font-size:14px; letter-spacing:0.01em;}
+      .kpi-value{color:#ffffff; font-weight:900; font-size:44px; margin-top:6px; line-height:1;}
+      .kpi-sub{color:#cbd5e1; font-size:12px; margin-top:6px;}
+
       .panel{
         background:#ffffff; border:1px solid #e5e7eb; border-radius:18px;
         padding:14px 16px; box-shadow:0 10px 25px rgba(0,0,0,0.05);
@@ -51,7 +66,7 @@ if "map_fullscreen" not in st.session_state:
     st.session_state["map_fullscreen"] = False
 
 # =========================
-# COLORES POR PROVINCIA (NUEVO: se suman nuevas provincias)
+# COLORES POR PROVINCIA (IGUAL)
 # =========================
 PROV_COLORS = {
     "San Jose":    {"stroke": "#6d28d9", "fill": "#8b5cf6"},  # morado
@@ -64,28 +79,29 @@ PROV_COLORS = {
 }
 
 # =========================
-# NORMALIZACIÓN DE ESTRUCTURAS
+# NORMALIZACIÓN DE ESTRUCTURAS (IGUAL)
 # - "Diablo" y "Diablo - Alejandro Arias Monge" = MISMA estructura
 # =========================
+def clean_txt(x: str) -> str:
+    if pd.isna(x):
+        return ""
+    x = str(x).strip()
+    x = re.sub(r"\s+", " ", x)
+    return x
+
 def normalize_estructura(name: str) -> str:
     name = clean_txt(name)
     if not name:
         return ""
     low = name.lower()
-
-    # Unifica Diablo / Diablo - Alejandro Arias / Diablo - Alejandro Arias Monge
     if low.startswith("diablo"):
         return "Diablo - Alejandro Arias Monge"
-
     return name
 
 # =========================
-# DATOS (MATRIZ ANCHA) — NO RESUMIDO
+# DATOS (MATRIZ ANCHA) — IGUAL
 # =========================
 RAW_BY_PROV = {
-    # -----------------------
-    # SAN JOSE (prueba 1)
-    # -----------------------
     "San Jose": [
         ("San Jose", [
             "Los Lara (San Sebastia)", "Los coqueros (Pavas)", "Los Moreco", "Turesky", "Pollo",
@@ -111,10 +127,6 @@ RAW_BY_PROV = {
         ("Perez Zeledon", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
         ("Leon Cortes", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
     ],
-
-    # -----------------------
-    # ALAJUELA
-    # -----------------------
     "Alajuela": [
         ("Alajuela", ["La hyena", "Diablo - Alejandro Arias", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Los Ungas", "Cascaritas (San Antonio y El Roble)", ""]),
         ("San Ramon", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
@@ -133,10 +145,6 @@ RAW_BY_PROV = {
         ("Guatuso", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
         ("Rio Cuarto", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
     ],
-
-    # -----------------------
-    # CARTAGO
-    # -----------------------
     "Cartago": [
         ("Cartago", ["Los Maruja", "", "", "", "", "", "", "Chacales", "Pollo", "Turco"]),
         ("Paraiso", ["Los Maruja", "", "", "", "", "", "", "", "", ""]),
@@ -147,10 +155,6 @@ RAW_BY_PROV = {
         ("Oreamuno", ["Los Maruja", "", "", "", "", "", "", "Los Elizondo", "", ""]),
         ("El Guarco", ["Los Maruja", "", "", "", "", "", "", "Hermanos Gary Gery", "Palomo", "Los Maruja"]),
     ],
-
-    # -----------------------
-    # HEREDIA
-    # -----------------------
     "Heredia": [
         ("Heredia", ["Lara", "Myrie", "Polacos", "Hermanos Ga", "Shaggy", "", "", "Pipis (Guararri y Los ...)", "Zepol", ""]),
         ("Barba", ["", "", "", "", "", "", "", "", "", ""]),
@@ -163,10 +167,6 @@ RAW_BY_PROV = {
         ("San Pablo", ["Diablo - Alejandro Arias Monge", "", "", "", "", "", "", "", "", ""]),
         ("Sarapiqui", ["Diablo - Alejandro Arias Monge", "", "", "", "", "", "", "Diablo", "", ""]),
     ],
-
-    # -----------------------
-    # GUANACASTE (NUEVO)
-    # -----------------------
     "Guanacaste": [
         ("Liberia",   ["Diablo - Alejandro Arias Monge", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Cartel de Juárez", "", "", ""]),
         ("Nicoya",    ["Diablo - Alejandro Arias Monge", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Cartel de Juárez", "", "", ""]),
@@ -180,12 +180,7 @@ RAW_BY_PROV = {
         ("La Cruz",   ["Diablo - Alejandro Arias Monge", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Cartel de Juárez", "", "", ""]),
         ("Hojancha",  ["Diablo - Alejandro Arias Monge", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Cartel de Juárez", "", "", ""]),
     ],
-
-    # -----------------------
-    # PUNTARENAS (NUEVO)
-    # -----------------------
     "Puntarenas": [
-        # Puntarenas (fila con varias estructuras en el pantallazo)
         ("Puntarenas", ["Diablo - Alejandro Arias Monge", "Los Picachu-20 de No", "Guayacanes - El Gordo Dan", "Los Buhos -", "El Gordo Ram", "Los Leiner - Barranca", "Los Unga - Barranca", "", "", ""]),
         ("Esparza",      ["Diablo - Alejandro Arias Monge", "Cartel de Juárez", "Los Unga - B", "El Gordo Ramos - Barranca", "", "", "", "", "", ""]),
         ("Buenos Aires", ["Diablo - Alejandro Arias Monge", "Cartel de Juárez", "", "", "", "", "", "", "", ""]),
@@ -200,10 +195,6 @@ RAW_BY_PROV = {
         ("Monteverde",   ["Diablo - Alejandro Arias Monge", "Cartel de Juárez", "", "", "", "", "", "", "", ""]),
         ("Puerto Jimenez",["Diablo - Alejandro Arias Monge", "Cartel de Juárez", "", "", "", "", "", "", "", ""]),
     ],
-
-    # -----------------------
-    # LIMON (NUEVO)
-    # -----------------------
     "Limon": [
         ("Limon",     ["La H", "Diablo - Alejandro Arias Monge", "Los Morenco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Tony Peña Russel", "La H", ""]),
         ("Pococi",    ["La H", "Diablo - Alejandro Arias Monge", "Los Morenco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
@@ -318,15 +309,8 @@ CANTON_COORDS = {
 }
 
 # =========================
-# HELPERS (IGUAL + normalización Diablo)
+# HELPERS (IGUAL)
 # =========================
-def clean_txt(x: str) -> str:
-    if pd.isna(x):
-        return ""
-    x = str(x).strip()
-    x = re.sub(r"\s+", " ", x)
-    return x
-
 def build_wide_df() -> pd.DataFrame:
     rows = []
     for prov, items in RAW_BY_PROV.items():
@@ -370,7 +354,7 @@ st.markdown("<div class='title'>Cantones y estructuras (Prueba 1)</div>", unsafe
 st.markdown("<div class='subtitle'>Mapa satelital ESRI, puntos por cantón y detalle de estructuras por ubicación.</div>", unsafe_allow_html=True)
 
 # =========================
-# FILTROS (provincia + canton + estructura)
+# FILTROS (provincia + canton + estructura) (IGUAL)
 # =========================
 with st.sidebar:
     st.header("Filtros")
@@ -394,20 +378,19 @@ if estr_sel:
 
 cantones_unicos = f["canton"].nunique()
 estructuras_unicas = f["estructura"].nunique()
-estructuras_unicos = estructuras_unicas  # alias defensivo
 
 # =========================
-# KPI (IGUAL)
+# KPI (IGUAL pero con color)
 # =========================
 st.markdown(
     f"""
     <div class="kpi-grid">
-      <div class="kpi">
+      <div class="kpi kpi-cantones">
         <div class="kpi-label">Cantones</div>
         <div class="kpi-value">{cantones_unicos:,}</div>
         <div class="kpi-sub">Total según filtros</div>
       </div>
-      <div class="kpi">
+      <div class="kpi kpi-estructuras">
         <div class="kpi-label">Estructuras</div>
         <div class="kpi-value">{estructuras_unicas:,}</div>
         <div class="kpi-sub">Únicas según filtros</div>
@@ -420,7 +403,7 @@ st.markdown(
 st.markdown("<hr/>", unsafe_allow_html=True)
 
 # =========================
-# MAP BUILDER (IGUAL + color por provincia)
+# MAP BUILDER (IGUAL)
 # =========================
 def render_map(df_filtered: pd.DataFrame, height_px: int):
     fm = df_filtered.dropna(subset=["lat", "lon"]).copy()
@@ -523,21 +506,32 @@ left, right = st.columns([1.05, 0.95], gap="large")
 with left:
     st.markdown("<div class='panel'>", unsafe_allow_html=True)
     st.subheader("Top estructuras (conteos)")
+
+    # ✅ TOP 10 (nuevo)
     top_struct = (
         f.groupby("estructura")
         .size()
         .reset_index(name="conteo")
         .sort_values("conteo", ascending=False)
-        .head(15)
+        .head(10)
     )
     fig_bar = px.bar(top_struct, x="conteo", y="estructura", orientation="h")
     fig_bar.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10))
     st.plotly_chart(fig_bar, use_container_width=True)
 
     st.subheader("Tabla normalizada")
-    # ✅ SOLO provincia, canton, estructura + sin índice
+
+    # ✅ Tabla unificada (nuevo): provincia, cantón, lista de estructuras
+    tabla_unificada = (
+        f.groupby(["provincia", "canton"])["estructura"]
+        .apply(lambda s: ", ".join(sorted(set(s))))
+        .reset_index()
+        .rename(columns={"estructura": "estructuras"})
+        .sort_values(["provincia", "canton"])
+    )
+
     st.dataframe(
-        f[["provincia", "canton", "estructura"]].sort_values(["provincia", "canton", "estructura"]),
+        tabla_unificada[["provincia", "canton", "estructuras"]],
         use_container_width=True,
         height=360,
         hide_index=True
