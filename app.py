@@ -14,7 +14,7 @@ from streamlit_folium import st_folium
 st.set_page_config(page_title="CR | Cantones y estructuras", page_icon="🛰️", layout="wide")
 
 # =========================
-# ESTILO (profesional, limpio)
+# ESTILO
 # =========================
 st.markdown(
     """
@@ -37,13 +37,21 @@ st.markdown(
       }
       hr {border:none; border-top:1px solid #e5e7eb; margin: 16px 0;}
       .caption{color:#6b7280; font-size:12px;}
+      .btnrow{display:flex; gap:10px; align-items:center; margin: 6px 0 10px 0;}
+      .mapwrap{border-radius:18px; overflow:hidden;}
     </style>
     """,
     unsafe_allow_html=True
 )
 
 # =========================
-# DATOS (del pantallazo)
+# SESSION STATE
+# =========================
+if "map_fullscreen" not in st.session_state:
+    st.session_state["map_fullscreen"] = False
+
+# =========================
+# DATOS (pantallazo)
 # =========================
 RAW_WIDE = [
     ("San Jose", [
@@ -73,9 +81,6 @@ RAW_WIDE = [
 PROVINCIA = "SAN JOSE"
 FUENTE = "La Extra"
 
-# =========================
-# COORDENADAS (centroides aprox.)
-# =========================
 CANTON_COORDS = {
     "San Jose": (9.9326, -84.0790),
     "Escazu": (9.9189, -84.1386),
@@ -99,9 +104,6 @@ CANTON_COORDS = {
     "Leon Cortes": (9.6770, -84.0470),
 }
 
-# =========================
-# HELPERS
-# =========================
 def clean_txt(x: str) -> str:
     if pd.isna(x):
         return ""
@@ -137,9 +139,7 @@ def add_coords(df: pd.DataFrame) -> pd.DataFrame:
     df["lon"] = df["canton"].map(lambda c: CANTON_COORDS.get(c, (None, None))[1])
     return df
 
-# =========================
-# BUILD DATA
-# =========================
+# Build data
 wide = build_wide_df()
 long = add_coords(normalize_long(wide))
 
@@ -150,13 +150,12 @@ st.markdown("<div class='title'>Cantones y estructuras (Prueba 1)</div>", unsafe
 st.markdown("<div class='subtitle'>Mapa satelital ESRI, puntos por cantón y detalle de estructuras por ubicación.</div>", unsafe_allow_html=True)
 
 # =========================
-# FILTROS
+# SIDEBAR FILTERS
 # =========================
 with st.sidebar:
     st.header("Filtros")
     cantones = sorted(long["canton"].unique().tolist())
     estructuras = sorted(long["estructura"].unique().tolist())
-
     cant_sel = st.multiselect("Cantón", cantones, default=[])
     estr_sel = st.multiselect("Estructura", estructuras, default=[])
 
@@ -182,7 +181,7 @@ st.markdown(
       </div>
       <div class="kpi">
         <div class="kpi-label">Estructuras</div>
-        <div class="kpi-value">{estructuras_unicas:,}</div>
+        <div class="kpi-value">{estructuras_unicos:,}</div>
         <div class="kpi-sub">Únicas según filtros</div>
       </div>
     </div>
@@ -193,7 +192,101 @@ st.markdown(
 st.markdown("<hr/>", unsafe_allow_html=True)
 
 # =========================
-# LAYOUT PRINCIPAL
+# MAP BUILDER (misma vista por datos; fullscreen solo cambia layout/alto)
+# =========================
+def render_map(df_filtered: pd.DataFrame, height_px: int):
+    fm = df_filtered.dropna(subset=["lat", "lon"]).copy()
+    if fm.empty:
+        st.warning("No hay puntos con coordenadas para mostrar.")
+        return
+
+    grp = (
+        fm.groupby(["canton", "lat", "lon"])
+        .agg(
+            registros=("estructura", "count"),
+            estructuras=("estructura", lambda s: sorted(set(s)))
+        )
+        .reset_index()
+    )
+
+    # Vista normal: centrada exactamente igual que antes (por promedio de datos)
+    center_lat = float(grp["lat"].mean())
+    center_lon = float(grp["lon"].mean())
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=8, control_scale=True, tiles=None)
+
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri, Maxar, Earthstar Geographics, CNES/Airbus DS, USDA, USGS",
+        name="ESRI Satélite",
+        overlay=False,
+        control=True
+    ).add_to(m)
+
+    folium.TileLayer(
+        tiles="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri",
+        name="Límites y lugares",
+        overlay=True,
+        control=True,
+        opacity=0.95
+    ).add_to(m)
+
+    folium.LayerControl(collapsed=True).add_to(m)
+
+    for _, r in grp.iterrows():
+        canton = r["canton"]
+        estructuras_list = r["estructuras"]
+        registros = int(r["registros"])
+
+        html = f"""
+        <div style="font-family: Arial; font-size: 13px; line-height: 1.25;">
+          <div style="font-size: 14px;"><b>{canton}</b></div>
+          <div><b>Estructuras:</b> {len(estructuras_list)}</div>
+          <div style="margin-top:6px;"><b>Listado:</b></div>
+          <ul style="margin: 6px 0 0 18px; padding: 0;">
+            {''.join([f'<li>{e}</li>' for e in estructuras_list])}
+          </ul>
+        </div>
+        """
+        popup = folium.Popup(html, max_width=380)
+        tooltip = f"{canton} | {len(estructuras_list)} estructuras"
+
+        radius = 6 + min(16, registros * 1.2)
+        folium.CircleMarker(
+            location=[float(r["lat"]), float(r["lon"])],
+            radius=radius,
+            weight=2,
+            color="#6d28d9",
+            fill=True,
+            fill_color="#8b5cf6",
+            fill_opacity=0.55,
+            tooltip=tooltip,
+            popup=popup
+        ).add_to(m)
+
+    st.markdown("<div class='mapwrap'>", unsafe_allow_html=True)
+    st_folium(m, use_container_width=True, height=height_px)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# =========================
+# FULLSCREEN MODE (solo cambia layout, NO la vista del mapa)
+# =========================
+if st.session_state["map_fullscreen"]:
+    # Barra superior fullscreen
+    st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
+    if st.button("⬅️ Salir de pantalla completa", use_container_width=False):
+        st.session_state["map_fullscreen"] = False
+        st.rerun()
+    st.markdown("<span class='caption'>Modo pantalla completa: el mapa ocupa casi toda la pantalla (sin cambiar la vista).</span>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Mapa gigante: ~92% de alto visible
+    render_map(f, height_px=920)
+    st.stop()
+
+# =========================
+# NORMAL VIEW (tu vista normal igual)
 # =========================
 left, right = st.columns([1.05, 0.95], gap="large")
 
@@ -212,8 +305,9 @@ with left:
     st.plotly_chart(fig_bar, use_container_width=True)
 
     st.subheader("Tabla normalizada")
+    # ✅ Solo canton + estructura
     st.dataframe(
-        f[["canton", "estructura", "fuente", "lat", "lon"]].sort_values(["canton", "estructura"]),
+        f[["canton", "estructura"]].sort_values(["canton", "estructura"]),
         use_container_width=True,
         height=360
     )
@@ -223,86 +317,19 @@ with right:
     st.markdown("<div class='panel'>", unsafe_allow_html=True)
     st.subheader("Mapa satelital (ESRI) — puntos por cantón")
 
-    fm = f.dropna(subset=["lat", "lon"]).copy()
-    if fm.empty:
-        st.warning("No hay puntos con coordenadas para mostrar.")
-    else:
-        grp = (
-            fm.groupby(["canton", "lat", "lon"])
-            .agg(
-                registros=("estructura", "count"),
-                estructuras=("estructura", lambda s: sorted(set(s)))
-            )
-            .reset_index()
-        )
+    st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
+    if st.button("⛶ Ver mapa en pantalla completa"):
+        st.session_state["map_fullscreen"] = True
+        st.rerun()
+    st.markdown("<span class='caption'>Abre el mapa ocupando casi toda la pantalla, sin cambiar la vista actual.</span>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-        center_lat = float(grp["lat"].mean())
-        center_lon = float(grp["lon"].mean())
-
-        # Importante: tiles None para evitar "fondo negro" por tema de capas
-        m = folium.Map(location=[center_lat, center_lon], zoom_start=8, control_scale=True, tiles=None)
-
-        # ESRI World Imagery (satélite realista)
-        folium.TileLayer(
-            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            attr="Esri, Maxar, Earthstar Geographics, CNES/Airbus DS, USDA, USGS",
-            name="ESRI Satélite",
-            overlay=False,
-            control=True
-        ).add_to(m)
-
-        # Labels/places para que NO se vea “oscuro sin referencias”
-        folium.TileLayer(
-            tiles="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-            attr="Esri",
-            name="Límites y lugares",
-            overlay=True,
-            control=True,
-            opacity=0.95
-        ).add_to(m)
-
-        folium.LayerControl(collapsed=True).add_to(m)
-
-        for _, r in grp.iterrows():
-            canton = r["canton"]
-            registros = int(r["registros"])
-            estructuras_list = r["estructuras"]
-
-            html = f"""
-            <div style="font-family: Arial; font-size: 13px; line-height: 1.25;">
-              <div style="font-size: 14px;"><b>{canton}</b></div>
-              <div><b>Estructuras:</b> {len(estructuras_list)}</div>
-              <div style="margin-top:6px;"><b>Listado:</b></div>
-              <ul style="margin: 6px 0 0 18px; padding: 0;">
-                {''.join([f'<li>{e}</li>' for e in estructuras_list])}
-              </ul>
-            </div>
-            """
-            popup = folium.Popup(html, max_width=380)
-            tooltip = f"{canton} | {len(estructuras_list)} estructuras"
-
-            radius = 6 + min(16, registros * 1.2)
-
-            folium.CircleMarker(
-                location=[float(r["lat"]), float(r["lon"])],
-                radius=radius,
-                weight=2,
-                color="#6d28d9",
-                fill=True,
-                fill_color="#8b5cf6",
-                fill_opacity=0.55,
-                tooltip=tooltip,
-                popup=popup
-            ).add_to(m)
-
-        # ✅ MÁS GRANDE y ancho completo
-        st_folium(m, use_container_width=True, height=820)
-
+    # Mapa normal: exactamente como lo tenías (misma lógica de center/zoom)
+    render_map(f, height_px=820)
     st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<hr/>", unsafe_allow_html=True)
 
-# Descarga
 csv_bytes = f.to_csv(index=False).encode("utf-8")
 st.download_button(
     "⬇️ Descargar datos filtrados (CSV)",
@@ -312,11 +339,9 @@ st.download_button(
 )
 
 st.markdown(
-    f"<div class='caption'>Resumen: <b>{estructuras_unicas}</b> estructuras únicas en <b>{cantones_unicos}</b> cantones (según filtros).</div>",
+    f"<div class='caption'>Resumen: <b>{estructuras_unicos}</b> estructuras únicas en <b>{cantones_unicos}</b> cantones (según filtros).</div>",
     unsafe_allow_html=True
 )
-
-
 
 
 
