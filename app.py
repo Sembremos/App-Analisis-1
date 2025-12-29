@@ -5,33 +5,35 @@ import re
 import pandas as pd
 import streamlit as st
 import plotly.express as px
-import pydeck as pdk
+import folium
+from streamlit_folium import st_folium
 
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="CR | Estructuras por cantón", page_icon="🗺️", layout="wide")
+st.set_page_config(page_title="CR | Estructuras por cantón", page_icon="🛰️", layout="wide")
 
 # =========================
-# ESTILO (look limpio tipo infografía)
+# ESTILO (KPI tipo infografía)
 # =========================
 st.markdown(
     """
     <style>
-      .block-container {padding-top: 1.1rem; padding-bottom: 2rem;}
+      .block-container {padding-top: 1.0rem; padding-bottom: 2rem;}
       .title{font-size: 28px; font-weight: 900; letter-spacing: -0.02em;}
-      .subtitle{color:#6b7280; margin-top:-6px;}
+      .subtitle{color:#9ca3af; margin-top:-6px;}
+      .kpi-row{display:flex; gap:14px; flex-wrap:wrap;}
       .kpi-card{
-        background:#fff; border:1px solid #eee; border-radius:18px;
-        padding:14px 16px; box-shadow:0 6px 18px rgba(0,0,0,0.04);
+        background:#0b0f17; border:1px solid rgba(255,255,255,0.06); border-radius:18px;
+        padding:14px 16px; box-shadow:0 10px 30px rgba(0,0,0,0.25);
+        min-width: 220px; flex:1;
       }
-      .muted{color:#6b7280; font-size:12px;}
-      .pill{
-        display:inline-block; padding:4px 10px; border-radius:999px;
-        background:rgba(139,92,246,0.12); color:#6d28d9; font-weight:800; font-size:12px;
-        margin-left:8px;
-      }
-      hr {border:none; border-top:1px solid #eee; margin: 16px 0;}
+      .kpi-label{color:#e5e7eb; font-weight:700; font-size:14px; opacity:0.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+      .kpi-value{color:#ffffff; font-weight:900; font-size:42px; margin-top:6px;}
+      .kpi-sub{color:#9ca3af; font-size:12px; margin-top:2px;}
+      hr {border:none; border-top:1px solid rgba(255,255,255,0.08); margin: 16px 0;}
+      .panel{background:#0b0f17; border:1px solid rgba(255,255,255,0.06); border-radius:18px; padding:14px 16px;}
+      .caption{color:#9ca3af; font-size:12px;}
     </style>
     """,
     unsafe_allow_html=True
@@ -39,72 +41,32 @@ st.markdown(
 
 # =========================
 # DATOS (CARGADOS DEL PANTALLAZO)
-# Provincia: SAN JOSE
-# Fuente: La Extra
+# Provincia: SAN JOSE | Fuente: La Extra
 # =========================
 RAW_WIDE = [
-    # canton, col1..col10 (estructuras)
     ("San Jose", [
         "Los Lara (San Sebastia)", "Los coqueros (Pavas)", "Los Moreco", "Turesky", "Pollo",
         "Indio", "Ojos Bellos", "Los Picudos (Carpio)", "Los Diablos (Pavas)", "Los Polacos (Pavas)"
     ]),
-    ("Escazu", [
-        "Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Desamparados", [
-        "Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Puriscal", [
-        "Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Tarrazu", [
-        "Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Aserri", [
-        "Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Mora", [
-        "Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Goicoechea", [
-        "Los Lara", "Mongo", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Santa Ana", [
-        "Los Lara", "La H", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Alajuelita", [
-        "Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Vasquez de Coronado", [
-        "", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Acosta", [
-        "", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Tibas", [
-        "Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Moravia", [
-        "", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Montes de Oca", [
-        "Los Lara", "Cartel de Sinaloa", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Turrubares", [
-        "", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Dota", [
-        "", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Curridabat", [
-        "GaryGery", "Churro y Tauro", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Perez Zeledon", [
-        "", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
-    ("Leon Cortes", [
-        "", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""
-    ]),
+    ("Escazu", ["Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Desamparados", ["Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Puriscal", ["Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Tarrazu", ["Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Aserri", ["Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Mora", ["Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Goicoechea", ["Los Lara", "Mongo", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Santa Ana", ["Los Lara", "La H", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Alajuelita", ["Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Vasquez de Coronado", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Acosta", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Tibas", ["Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Moravia", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Montes de Oca", ["Los Lara", "Cartel de Sinaloa", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Turrubares", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Dota", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Curridabat", ["GaryGery", "Churro y Tauro", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Perez Zeledon", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+    ("Leon Cortes", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
 ]
 
 PROVINCIA = "SAN JOSE"
@@ -146,7 +108,7 @@ def clean_txt(x: str) -> str:
     x = re.sub(r"\s+", " ", x)
     return x
 
-def build_wide_df():
+def build_wide_df() -> pd.DataFrame:
     rows = []
     for canton, structs in RAW_WIDE:
         r = {"provincia": PROVINCIA, "canton": canton, "fuente": FUENTE}
@@ -181,63 +143,70 @@ wide = build_wide_df()
 long = add_coords(normalize_long(wide))
 
 # =========================
-# UI HEADER
+# HEADER
 # =========================
-st.markdown(f'<div class="title">Panel CR — Estructuras por cantón <span class="pill">Prueba 1</span></div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Datos cargados desde el pantallazo (Provincia SAN JOSÉ) + mapa + gráficas.</div>', unsafe_allow_html=True)
+st.markdown(f'<div class="title">Panel CR — Estructuras por cantón <span class="pill">ESRI Satélite</span></div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Datos del pantallazo (Provincia SAN JOSÉ) + mapa satelital + gráficas + lista.</div>', unsafe_allow_html=True)
 st.markdown("<hr/>", unsafe_allow_html=True)
 
 # =========================
-# FILTERS
+# FILTROS
 # =========================
 with st.sidebar:
     st.header("Filtros")
-    provs = sorted(long["provincia"].unique().tolist())
-    cants = sorted(long["canton"].unique().tolist())
-    estrs = sorted(long["estructura"].unique().tolist())
+    cantones = sorted(long["canton"].unique().tolist())
+    estructuras = sorted(long["estructura"].unique().tolist())
 
-    prov_sel = st.multiselect("Provincia", provs, default=provs)
-    cant_sel = st.multiselect("Cantón", cants, default=[])
-    estr_sel = st.multiselect("Estructura", estrs, default=[])
+    cant_sel = st.multiselect("Cantón", cantones, default=[])
+    estr_sel = st.multiselect("Estructura", estructuras, default=[])
 
 f = long.copy()
-if prov_sel:
-    f = f[f["provincia"].isin(prov_sel)]
 if cant_sel:
     f = f[f["canton"].isin(cant_sel)]
 if estr_sel:
     f = f[f["estructura"].isin(estr_sel)]
 
 # =========================
-# KPIs
+# RESPUESTA A TU PREGUNTA (conteos)
 # =========================
-k1, k2, k3, k4 = st.columns(4)
+cantones_unicos = f["canton"].nunique()
+estructuras_unicas = f["estructura"].nunique()
 
-with k1:
-    st.markdown('<div class="kpi-card">', unsafe_allow_html=True)
-    st.metric("Registros (cantón-estructura)", f"{len(f):,}")
-    st.markdown('<div class="muted">Filas normalizadas</div></div>', unsafe_allow_html=True)
-
-with k2:
-    st.markdown('<div class="kpi-card">', unsafe_allow_html=True)
-    st.metric("Cantones únicos", f"{f['canton'].nunique():,}")
-    st.markdown('<div class="muted">Según filtros</div></div>', unsafe_allow_html=True)
-
-with k3:
-    st.markdown('<div class="kpi-card">', unsafe_allow_html=True)
-    st.metric("Estructuras únicas", f"{f['estructura'].nunique():,}")
-    st.markdown('<div class="muted">Sin deduplicación semántica</div></div>', unsafe_allow_html=True)
-
-with k4:
-    st.markdown('<div class="kpi-card">', unsafe_allow_html=True)
-    with_coords = f["lat"].notna().sum()
-    st.metric("Georreferenciados", f"{with_coords:,}")
-    st.markdown('<div class="muted">Con centroides cantonales</div></div>', unsafe_allow_html=True)
+# =========================
+# KPIs (como tu captura)
+# =========================
+st.markdown(
+    f"""
+    <div class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-label">Registros (cantón-estructura)</div>
+        <div class="kpi-value">{len(f):,}</div>
+        <div class="kpi-sub">Filas normalizadas</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Cantones únicos</div>
+        <div class="kpi-value">{cantones_unicos:,}</div>
+        <div class="kpi-sub">Según filtros</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Estructuras únicas</div>
+        <div class="kpi-value">{estructuras_unicas:,}</div>
+        <div class="kpi-sub">Sin deduplicación semántica</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Georreferenciados</div>
+        <div class="kpi-value">{int(f["lat"].notna().sum()):,}</div>
+        <div class="kpi-sub">Con centroides cantonales</div>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 st.markdown("<hr/>", unsafe_allow_html=True)
 
 # =========================
-# CHARTS + MAP + TABLE
+# VISUALS
 # =========================
 left, right = st.columns([1.05, 0.95], gap="large")
 
@@ -254,7 +223,7 @@ with left:
     fig_bar.update_layout(height=420, margin=dict(l=10, r=10, t=10, b=10))
     st.plotly_chart(fig_bar, use_container_width=True)
 
-    st.subheader("Tabla normalizada (lo que usa la app)")
+    st.subheader("Tabla normalizada")
     st.dataframe(
         f[["provincia", "canton", "estructura", "fuente", "lat", "lon"]].sort_values(["canton", "estructura"]),
         use_container_width=True,
@@ -262,41 +231,90 @@ with left:
     )
 
 with right:
-    st.subheader("Proporción por cantón (Top)")
-    top_cant = (
-        f.groupby("canton")
-        .size()
-        .reset_index(name="conteo")
-        .sort_values("conteo", ascending=False)
-        .head(12)
-    )
-    fig_donut = px.pie(top_cant, values="conteo", names="canton", hole=0.62)
-    fig_donut.update_layout(height=320, margin=dict(l=10, r=10, t=10, b=10))
-    st.plotly_chart(fig_donut, use_container_width=True)
+    st.subheader("Mapa satelital (ESRI) — marcadores con lista de estructuras")
 
-    st.subheader("Mapa (Costa Rica) — puntos por cantón")
     fm = f.dropna(subset=["lat", "lon"]).copy()
 
-    # un punto por cantón con conteo
-    fm_one = (
-        fm.groupby(["canton", "lat", "lon"], as_index=False)
-        .agg(conteo=("estructura", "count"))
-        .sort_values("conteo", ascending=False)
-    )
+    if fm.empty:
+        st.warning("No hay puntos con coordenadas para mostrar.")
+    else:
+        # Agrupar: cantón -> lista de estructuras (únicas)
+        grp = (
+            fm.groupby(["canton", "lat", "lon"])
+            .agg(
+                registros=("estructura", "count"),
+                estructuras=("estructura", lambda s: sorted(set(s)))
+            )
+            .reset_index()
+        )
 
-    layer = pdk.Layer(
-        "ScatterplotLayer",
-        data=fm_one,
-        get_position=["lon", "lat"],
-        get_radius="conteo * 160",
-        pickable=True,
-        auto_highlight=True,
-    )
+        # Centro del mapa (promedio)
+        center_lat = float(grp["lat"].mean())
+        center_lon = float(grp["lon"].mean())
 
-    view = pdk.ViewState(latitude=9.85, longitude=-84.10, zoom=8.2, pitch=0)
-    tooltip = {"text": "Cantón: {canton}\nRegistros: {conteo}"}
+        # Mapa folium con ESRI World Imagery
+        m = folium.Map(location=[center_lat, center_lon], zoom_start=8, control_scale=True, tiles=None)
 
-    st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, tooltip=tooltip), use_container_width=True)
+        # ESRI Satélite (World Imagery)
+        folium.TileLayer(
+            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            attr="Esri, Maxar, Earthstar Geographics, CNES/Airbus DS, USDA, USGS, AeroGRID, IGN, and the GIS User Community",
+            name="Esri World Imagery",
+            overlay=False,
+            control=True
+        ).add_to(m)
+
+        # Opcional: bordes/labels (para leer mejor)
+        folium.TileLayer(
+            tiles="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+            attr="Esri",
+            name="Límites y lugares",
+            overlay=True,
+            control=True,
+            opacity=0.9
+        ).add_to(m)
+
+        folium.LayerControl(collapsed=True).add_to(m)
+
+        # Marcadores con "nube" (popup) mostrando cantón + estructuras
+        for _, r in grp.iterrows():
+            canton = r["canton"]
+            registros = int(r["registros"])
+            estructuras_list = r["estructuras"]
+
+            # Popup HTML (nube)
+            html = f"""
+            <div style="font-family: Arial; font-size: 13px;">
+              <b>Cantón:</b> {canton}<br/>
+              <b>Registros:</b> {registros}<br/>
+              <b>Estructuras presentes:</b>
+              <ul style="margin: 6px 0 0 18px; padding: 0;">
+                {''.join([f'<li>{e}</li>' for e in estructuras_list])}
+              </ul>
+            </div>
+            """
+
+            popup = folium.Popup(html, max_width=360)
+
+            # Tooltip breve (solo cantón)
+            tooltip = f"{canton} | Registros: {registros}"
+
+            # Tamaño del marcador según registros
+            radius = 6 + min(18, registros * 1.2)
+
+            folium.CircleMarker(
+                location=[float(r["lat"]), float(r["lon"])],
+                radius=radius,
+                weight=2,
+                color="#a78bfa",      # borde
+                fill=True,
+                fill_color="#7c3aed", # relleno
+                fill_opacity=0.65,
+                tooltip=tooltip,
+                popup=popup
+            ).add_to(m)
+
+        st_folium(m, use_container_width=True, height=720)
 
 st.markdown("<hr/>", unsafe_allow_html=True)
 
@@ -311,7 +329,10 @@ st.download_button(
     mime="text/csv"
 )
 
-st.caption("Prueba 1 lista: datos del pantallazo cargados en el código + normalización + gráficos + mapa.")
+st.markdown(
+    f"<div class='caption'>Resumen: <b>{estructuras_unicas}</b> estructuras únicas en <b>{cantones_unicos}</b> cantones (según filtros actuales).</div>",
+    unsafe_allow_html=True
+)
 
 
 
