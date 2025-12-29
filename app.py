@@ -1,5 +1,5 @@
 # app.py
-# Ejecuta: streamlit run app.py
+# streamlit run app.py
 
 import re
 import pandas as pd
@@ -11,37 +11,39 @@ from streamlit_folium import st_folium
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="CR | Estructuras por cantón", page_icon="🛰️", layout="wide")
+st.set_page_config(page_title="CR | Cantones y estructuras", page_icon="🛰️", layout="wide")
 
 # =========================
-# ESTILO (KPI tipo infografía)
+# ESTILO (profesional, limpio)
 # =========================
 st.markdown(
     """
     <style>
       .block-container {padding-top: 1.0rem; padding-bottom: 2rem;}
-      .title{font-size: 28px; font-weight: 900; letter-spacing: -0.02em;}
-      .subtitle{color:#9ca3af; margin-top:-6px;}
-      .kpi-row{display:flex; gap:14px; flex-wrap:wrap;}
-      .kpi-card{
-        background:#0b0f17; border:1px solid rgba(255,255,255,0.06); border-radius:18px;
-        padding:14px 16px; box-shadow:0 10px 30px rgba(0,0,0,0.25);
-        min-width: 220px; flex:1;
+      .title{font-size: 28px; font-weight: 900; letter-spacing: -0.02em; margin-bottom: 2px;}
+      .subtitle{color:#6b7280; margin-top:0px; margin-bottom: 14px;}
+      .kpi-grid{display:flex; gap:14px; flex-wrap:wrap; margin-bottom: 10px;}
+      .kpi{
+        background:#ffffff; border:1px solid #e5e7eb; border-radius:18px;
+        padding:16px 18px; box-shadow:0 10px 25px rgba(0,0,0,0.06);
+        min-width: 240px; flex:1;
       }
-      .kpi-label{color:#e5e7eb; font-weight:700; font-size:14px; opacity:0.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-      .kpi-value{color:#ffffff; font-weight:900; font-size:42px; margin-top:6px;}
-      .kpi-sub{color:#9ca3af; font-size:12px; margin-top:2px;}
-      hr {border:none; border-top:1px solid rgba(255,255,255,0.08); margin: 16px 0;}
-      .panel{background:#0b0f17; border:1px solid rgba(255,255,255,0.06); border-radius:18px; padding:14px 16px;}
-      .caption{color:#9ca3af; font-size:12px;}
+      .kpi-label{color:#111827; font-weight:800; font-size:14px; letter-spacing:0.01em;}
+      .kpi-value{color:#111827; font-weight:900; font-size:44px; margin-top:6px; line-height:1;}
+      .kpi-sub{color:#6b7280; font-size:12px; margin-top:6px;}
+      .panel{
+        background:#ffffff; border:1px solid #e5e7eb; border-radius:18px;
+        padding:14px 16px; box-shadow:0 10px 25px rgba(0,0,0,0.05);
+      }
+      hr {border:none; border-top:1px solid #e5e7eb; margin: 16px 0;}
+      .caption{color:#6b7280; font-size:12px;}
     </style>
     """,
     unsafe_allow_html=True
 )
 
 # =========================
-# DATOS (CARGADOS DEL PANTALLAZO)
-# Provincia: SAN JOSE | Fuente: La Extra
+# DATOS (del pantallazo)
 # =========================
 RAW_WIDE = [
     ("San Jose", [
@@ -68,12 +70,11 @@ RAW_WIDE = [
     ("Perez Zeledon", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
     ("Leon Cortes", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
 ]
-
 PROVINCIA = "SAN JOSE"
 FUENTE = "La Extra"
 
 # =========================
-# COORDENADAS (centroides aprox. por cantón)
+# COORDENADAS (centroides aprox.)
 # =========================
 CANTON_COORDS = {
     "San Jose": (9.9326, -84.0790),
@@ -145,9 +146,8 @@ long = add_coords(normalize_long(wide))
 # =========================
 # HEADER
 # =========================
-st.markdown(f'<div class="title">Panel CR — Estructuras por cantón <span class="pill">ESRI Satélite</span></div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Datos del pantallazo (Provincia SAN JOSÉ) + mapa satelital + gráficas + lista.</div>', unsafe_allow_html=True)
-st.markdown("<hr/>", unsafe_allow_html=True)
+st.markdown("<div class='title'>Cantones y estructuras (Prueba 1)</div>", unsafe_allow_html=True)
+st.markdown("<div class='subtitle'>Mapa satelital ESRI, puntos por cantón y detalle de estructuras por ubicación.</div>", unsafe_allow_html=True)
 
 # =========================
 # FILTROS
@@ -166,37 +166,24 @@ if cant_sel:
 if estr_sel:
     f = f[f["estructura"].isin(estr_sel)]
 
-# =========================
-# RESPUESTA A TU PREGUNTA (conteos)
-# =========================
 cantones_unicos = f["canton"].nunique()
 estructuras_unicas = f["estructura"].nunique()
 
 # =========================
-# KPIs (como tu captura)
+# KPI (solo Cantones y Estructuras)
 # =========================
 st.markdown(
     f"""
-    <div class="kpi-row">
-      <div class="kpi-card">
-        <div class="kpi-label">Registros (cantón-estructura)</div>
-        <div class="kpi-value">{len(f):,}</div>
-        <div class="kpi-sub">Filas normalizadas</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Cantones únicos</div>
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="kpi-label">Cantones</div>
         <div class="kpi-value">{cantones_unicos:,}</div>
-        <div class="kpi-sub">Según filtros</div>
+        <div class="kpi-sub">Total según filtros</div>
       </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Estructuras únicas</div>
+      <div class="kpi">
+        <div class="kpi-label">Estructuras</div>
         <div class="kpi-value">{estructuras_unicas:,}</div>
-        <div class="kpi-sub">Sin deduplicación semántica</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Georreferenciados</div>
-        <div class="kpi-value">{int(f["lat"].notna().sum()):,}</div>
-        <div class="kpi-sub">Con centroides cantonales</div>
+        <div class="kpi-sub">Únicas según filtros</div>
       </div>
     </div>
     """,
@@ -206,11 +193,12 @@ st.markdown(
 st.markdown("<hr/>", unsafe_allow_html=True)
 
 # =========================
-# VISUALS
+# LAYOUT PRINCIPAL
 # =========================
 left, right = st.columns([1.05, 0.95], gap="large")
 
 with left:
+    st.markdown("<div class='panel'>", unsafe_allow_html=True)
     st.subheader("Top estructuras (conteos)")
     top_struct = (
         f.groupby("estructura")
@@ -220,25 +208,25 @@ with left:
         .head(15)
     )
     fig_bar = px.bar(top_struct, x="conteo", y="estructura", orientation="h")
-    fig_bar.update_layout(height=420, margin=dict(l=10, r=10, t=10, b=10))
+    fig_bar.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10))
     st.plotly_chart(fig_bar, use_container_width=True)
 
     st.subheader("Tabla normalizada")
     st.dataframe(
-        f[["provincia", "canton", "estructura", "fuente", "lat", "lon"]].sort_values(["canton", "estructura"]),
+        f[["canton", "estructura", "fuente", "lat", "lon"]].sort_values(["canton", "estructura"]),
         use_container_width=True,
         height=360
     )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 with right:
-    st.subheader("Mapa satelital (ESRI) — marcadores con lista de estructuras")
+    st.markdown("<div class='panel'>", unsafe_allow_html=True)
+    st.subheader("Mapa satelital (ESRI) — puntos por cantón")
 
     fm = f.dropna(subset=["lat", "lon"]).copy()
-
     if fm.empty:
         st.warning("No hay puntos con coordenadas para mostrar.")
     else:
-        # Agrupar: cantón -> lista de estructuras (únicas)
         grp = (
             fm.groupby(["canton", "lat", "lon"])
             .agg(
@@ -248,92 +236,85 @@ with right:
             .reset_index()
         )
 
-        # Centro del mapa (promedio)
         center_lat = float(grp["lat"].mean())
         center_lon = float(grp["lon"].mean())
 
-        # Mapa folium con ESRI World Imagery
+        # Importante: tiles None para evitar "fondo negro" por tema de capas
         m = folium.Map(location=[center_lat, center_lon], zoom_start=8, control_scale=True, tiles=None)
 
-        # ESRI Satélite (World Imagery)
+        # ESRI World Imagery (satélite realista)
         folium.TileLayer(
             tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            attr="Esri, Maxar, Earthstar Geographics, CNES/Airbus DS, USDA, USGS, AeroGRID, IGN, and the GIS User Community",
-            name="Esri World Imagery",
+            attr="Esri, Maxar, Earthstar Geographics, CNES/Airbus DS, USDA, USGS",
+            name="ESRI Satélite",
             overlay=False,
             control=True
         ).add_to(m)
 
-        # Opcional: bordes/labels (para leer mejor)
+        # Labels/places para que NO se vea “oscuro sin referencias”
         folium.TileLayer(
             tiles="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
             attr="Esri",
             name="Límites y lugares",
             overlay=True,
             control=True,
-            opacity=0.9
+            opacity=0.95
         ).add_to(m)
 
         folium.LayerControl(collapsed=True).add_to(m)
 
-        # Marcadores con "nube" (popup) mostrando cantón + estructuras
         for _, r in grp.iterrows():
             canton = r["canton"]
             registros = int(r["registros"])
             estructuras_list = r["estructuras"]
 
-            # Popup HTML (nube)
             html = f"""
-            <div style="font-family: Arial; font-size: 13px;">
-              <b>Cantón:</b> {canton}<br/>
-              <b>Registros:</b> {registros}<br/>
-              <b>Estructuras presentes:</b>
+            <div style="font-family: Arial; font-size: 13px; line-height: 1.25;">
+              <div style="font-size: 14px;"><b>{canton}</b></div>
+              <div><b>Estructuras:</b> {len(estructuras_list)}</div>
+              <div style="margin-top:6px;"><b>Listado:</b></div>
               <ul style="margin: 6px 0 0 18px; padding: 0;">
                 {''.join([f'<li>{e}</li>' for e in estructuras_list])}
               </ul>
             </div>
             """
+            popup = folium.Popup(html, max_width=380)
+            tooltip = f"{canton} | {len(estructuras_list)} estructuras"
 
-            popup = folium.Popup(html, max_width=360)
-
-            # Tooltip breve (solo cantón)
-            tooltip = f"{canton} | Registros: {registros}"
-
-            # Tamaño del marcador según registros
-            radius = 6 + min(18, registros * 1.2)
+            radius = 6 + min(16, registros * 1.2)
 
             folium.CircleMarker(
                 location=[float(r["lat"]), float(r["lon"])],
                 radius=radius,
                 weight=2,
-                color="#a78bfa",      # borde
+                color="#6d28d9",
                 fill=True,
-                fill_color="#7c3aed", # relleno
-                fill_opacity=0.65,
+                fill_color="#8b5cf6",
+                fill_opacity=0.55,
                 tooltip=tooltip,
                 popup=popup
             ).add_to(m)
 
-        st_folium(m, use_container_width=True, height=720)
+        # ✅ MÁS GRANDE y ancho completo
+        st_folium(m, use_container_width=True, height=820)
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("<hr/>", unsafe_allow_html=True)
 
-# =========================
-# DESCARGA (opcional)
-# =========================
+# Descarga
 csv_bytes = f.to_csv(index=False).encode("utf-8")
 st.download_button(
     "⬇️ Descargar datos filtrados (CSV)",
     data=csv_bytes,
-    file_name="estructuras_por_canton_normalizado.csv",
+    file_name="cantones_estructuras_normalizado.csv",
     mime="text/csv"
 )
 
 st.markdown(
-    f"<div class='caption'>Resumen: <b>{estructuras_unicas}</b> estructuras únicas en <b>{cantones_unicos}</b> cantones (según filtros actuales).</div>",
+    f"<div class='caption'>Resumen: <b>{estructuras_unicas}</b> estructuras únicas en <b>{cantones_unicos}</b> cantones (según filtros).</div>",
     unsafe_allow_html=True
 )
-
 
 
 
