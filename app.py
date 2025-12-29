@@ -51,22 +51,40 @@ if "map_fullscreen" not in st.session_state:
     st.session_state["map_fullscreen"] = False
 
 # =========================
-# COLORES POR PROVINCIA (NUEVO, SOLO PARA MARCAS)
+# COLORES POR PROVINCIA (NUEVO: se suman nuevas provincias)
 # =========================
 PROV_COLORS = {
-    "San Jose": {"stroke": "#6d28d9", "fill": "#8b5cf6"},   # morado
-    "Alajuela": {"stroke": "#0f766e", "fill": "#14b8a6"},   # teal
-    "Cartago":  {"stroke": "#b45309", "fill": "#f59e0b"},   # naranja
-    "Heredia":  {"stroke": "#1d4ed8", "fill": "#60a5fa"},   # azul
+    "San Jose":    {"stroke": "#6d28d9", "fill": "#8b5cf6"},  # morado
+    "Alajuela":    {"stroke": "#0f766e", "fill": "#14b8a6"},  # teal
+    "Cartago":     {"stroke": "#b45309", "fill": "#f59e0b"},  # naranja
+    "Heredia":     {"stroke": "#1d4ed8", "fill": "#60a5fa"},  # azul
+    "Guanacaste":  {"stroke": "#15803d", "fill": "#4ade80"},  # verde
+    "Puntarenas":  {"stroke": "#b91c1c", "fill": "#f87171"},  # rojo
+    "Limon":       {"stroke": "#a16207", "fill": "#facc15"},  # amarillo
 }
+
+# =========================
+# NORMALIZACIÓN DE ESTRUCTURAS
+# - "Diablo" y "Diablo - Alejandro Arias Monge" = MISMA estructura
+# =========================
+def normalize_estructura(name: str) -> str:
+    name = clean_txt(name)
+    if not name:
+        return ""
+    low = name.lower()
+
+    # Unifica Diablo / Diablo - Alejandro Arias / Diablo - Alejandro Arias Monge
+    if low.startswith("diablo"):
+        return "Diablo - Alejandro Arias Monge"
+
+    return name
 
 # =========================
 # DATOS (MATRIZ ANCHA) — NO RESUMIDO
 # =========================
-# NOTA: Cada fila trae 10 "celdas" de estructuras (e1..e10) como tu Excel.
 RAW_BY_PROV = {
     # -----------------------
-    # SAN JOSE (tu prueba 1)
+    # SAN JOSE (prueba 1)
     # -----------------------
     "San Jose": [
         ("San Jose", [
@@ -95,7 +113,7 @@ RAW_BY_PROV = {
     ],
 
     # -----------------------
-    # ALAJUELA (según pantallazo visible)
+    # ALAJUELA
     # -----------------------
     "Alajuela": [
         ("Alajuela", ["La hyena", "Diablo - Alejandro Arias", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Los Ungas", "Cascaritas (San Antonio y El Roble)", ""]),
@@ -117,7 +135,7 @@ RAW_BY_PROV = {
     ],
 
     # -----------------------
-    # CARTAGO (según pantallazo visible)
+    # CARTAGO
     # -----------------------
     "Cartago": [
         ("Cartago", ["Los Maruja", "", "", "", "", "", "", "Chacales", "Pollo", "Turco"]),
@@ -131,7 +149,7 @@ RAW_BY_PROV = {
     ],
 
     # -----------------------
-    # HEREDIA (según pantallazo visible)
+    # HEREDIA
     # -----------------------
     "Heredia": [
         ("Heredia", ["Lara", "Myrie", "Polacos", "Hermanos Ga", "Shaggy", "", "", "Pipis (Guararri y Los ...)", "Zepol", ""]),
@@ -144,6 +162,55 @@ RAW_BY_PROV = {
         ("Flores", ["", "", "", "", "", "", "", "", "", ""]),
         ("San Pablo", ["Diablo - Alejandro Arias Monge", "", "", "", "", "", "", "", "", ""]),
         ("Sarapiqui", ["Diablo - Alejandro Arias Monge", "", "", "", "", "", "", "Diablo", "", ""]),
+    ],
+
+    # -----------------------
+    # GUANACASTE (NUEVO)
+    # -----------------------
+    "Guanacaste": [
+        ("Liberia",   ["Diablo - Alejandro Arias Monge", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Cartel de Juárez", "", "", ""]),
+        ("Nicoya",    ["Diablo - Alejandro Arias Monge", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Cartel de Juárez", "", "", ""]),
+        ("Santa Cruz",["Diablo - Alejandro Arias Monge", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Cartel de Juárez", "Diablo", "Ticachu (Tamarindo)", "Los Porteños"]),
+        ("Bagaces",   ["Diablo - Alejandro Arias Monge", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Cartel de Juárez", "", "", ""]),
+        ("Carrillo",  ["Diablo - Alejandro Arias Monge", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Cartel de Juárez", "", "", ""]),
+        ("Cañas",     ["Diablo - Alejandro Arias Monge", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Cartel de Juárez", "Rata", "", ""]),
+        ("Abangares", ["Diablo - Alejandro Arias Monge", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Cartel de Juárez", "", "", ""]),
+        ("Tilaran",   ["Diablo - Alejandro Arias Monge", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Cartel de Juárez", "", "", ""]),
+        ("Nandayure", ["Diablo - Alejandro Arias Monge", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Cartel de Juárez", "", "", ""]),
+        ("La Cruz",   ["Diablo - Alejandro Arias Monge", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Cartel de Juárez", "", "", ""]),
+        ("Hojancha",  ["Diablo - Alejandro Arias Monge", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Cartel de Juárez", "", "", ""]),
+    ],
+
+    # -----------------------
+    # PUNTARENAS (NUEVO)
+    # -----------------------
+    "Puntarenas": [
+        # Puntarenas (fila con varias estructuras en el pantallazo)
+        ("Puntarenas", ["Diablo - Alejandro Arias Monge", "Los Picachu-20 de No", "Guayacanes - El Gordo Dan", "Los Buhos -", "El Gordo Ram", "Los Leiner - Barranca", "Los Unga - Barranca", "", "", ""]),
+        ("Esparza",      ["Diablo - Alejandro Arias Monge", "Cartel de Juárez", "Los Unga - B", "El Gordo Ramos - Barranca", "", "", "", "", "", ""]),
+        ("Buenos Aires", ["Diablo - Alejandro Arias Monge", "Cartel de Juárez", "", "", "", "", "", "", "", ""]),
+        ("Montes de Oro",["Diablo - Alejandro Arias Monge", "Cartel de Juárez", "", "", "", "", "", "", "", ""]),
+        ("Osa",          ["Diablo - Alejandro Arias Monge", "Cartel de Juárez", "", "", "", "", "", "Diablo", "", ""]),
+        ("Aguirre",      ["Diablo - Alejandro Arias Monge", "Cartel de Juárez", "", "", "", "", "", "", "", ""]),
+        ("Golfito",      ["Diablo - Alejandro Arias Monge", "Cartel de Juárez", "", "", "", "", "", "", "", ""]),
+        ("Coto Brus",    ["Diablo - Alejandro Arias Monge", "Cartel de Juárez", "", "", "", "", "", "", "", ""]),
+        ("Parrita",      ["Diablo - Alejandro Arias Monge", "Cartel de Juárez", "", "", "", "", "", "", "", ""]),
+        ("Corredores",   ["Diablo - Alejandro Arias Monge", "Cartel de Juárez", "", "", "", "", "", "", "", ""]),
+        ("Garabito",     ["Diablo - Alejandro Arias Monge", "Cartel de Juárez", "", "", "", "", "", "", "", ""]),
+        ("Monteverde",   ["Diablo - Alejandro Arias Monge", "Cartel de Juárez", "", "", "", "", "", "", "", ""]),
+        ("Puerto Jimenez",["Diablo - Alejandro Arias Monge", "Cartel de Juárez", "", "", "", "", "", "", "", ""]),
+    ],
+
+    # -----------------------
+    # LIMON (NUEVO)
+    # -----------------------
+    "Limon": [
+        ("Limon",     ["La H", "Diablo - Alejandro Arias Monge", "Los Morenco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Tony Peña Russel", "La H", ""]),
+        ("Pococi",    ["La H", "Diablo - Alejandro Arias Monge", "Los Morenco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+        ("Siquirres", ["La H", "Diablo - Alejandro Arias Monge", "Los Morenco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+        ("Talamanca", ["La H", "Diablo - Alejandro Arias Monge", "Los Morenco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
+        ("Matina",    ["La H", "Diablo - Alejandro Arias Monge", "Los Morenco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Tony Peña Russel", "La H", ""]),
+        ("Guacimo",   ["La H", "Diablo - Alejandro Arias Monge", "Los Morenco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Pechuga", "", ""]),
     ],
 }
 
@@ -212,10 +279,46 @@ CANTON_COORDS = {
     "Flores": (10.0000, -84.1600),
     "San Pablo": (10.0000, -84.1000),
     "Sarapiqui": (10.4600, -84.0300),
+
+    # Guanacaste
+    "Liberia": (10.6340, -85.4370),
+    "Nicoya": (10.1490, -85.4520),
+    "Santa Cruz": (10.2600, -85.5860),
+    "Bagaces": (10.5300, -85.2500),
+    "Carrillo": (10.4300, -85.5500),
+    "Cañas": (10.4300, -85.1000),
+    "Abangares": (10.2200, -84.9000),
+    "Tilaran": (10.4700, -84.9700),
+    "Nandayure": (9.9200, -85.2900),
+    "La Cruz": (11.0700, -85.6300),
+    "Hojancha": (10.0600, -85.4200),
+
+    # Puntarenas
+    "Puntarenas": (9.9800, -84.8300),
+    "Esparza": (9.9900, -84.6600),
+    "Buenos Aires": (9.1700, -83.3300),
+    "Montes de Oro": (10.1000, -84.7300),
+    "Osa": (8.9500, -83.5300),
+    "Aguirre": (9.4300, -84.1600),
+    "Golfito": (8.6500, -83.1500),
+    "Coto Brus": (8.9500, -82.9500),
+    "Parrita": (9.5200, -84.3200),
+    "Corredores": (8.5800, -82.9500),
+    "Garabito": (9.6200, -84.6300),
+    "Monteverde": (10.3000, -84.8200),
+    "Puerto Jimenez": (8.5300, -83.3000),
+
+    # Limón
+    "Limon": (9.9900, -83.0300),
+    "Pococi": (10.6200, -83.7400),
+    "Siquirres": (10.1000, -83.5100),
+    "Talamanca": (9.6200, -82.8500),
+    "Matina": (10.0800, -83.3000),
+    "Guacimo": (10.2100, -83.6800),
 }
 
 # =========================
-# HELPERS (IGUAL)
+# HELPERS (IGUAL + normalización Diablo)
 # =========================
 def clean_txt(x: str) -> str:
     if pd.isna(x):
@@ -243,6 +346,7 @@ def normalize_long(df_wide: pd.DataFrame) -> pd.DataFrame:
         value_name="estructura"
     )
     long["estructura"] = long["estructura"].apply(clean_txt)
+    long["estructura"] = long["estructura"].apply(normalize_estructura)
     long = long[long["estructura"].str.len() > 0].copy()
     long.drop(columns=["col"], inplace=True)
     return long.reset_index(drop=True)
@@ -266,7 +370,7 @@ st.markdown("<div class='title'>Cantones y estructuras (Prueba 1)</div>", unsafe
 st.markdown("<div class='subtitle'>Mapa satelital ESRI, puntos por cantón y detalle de estructuras por ubicación.</div>", unsafe_allow_html=True)
 
 # =========================
-# FILTROS (NUEVO provincia + los mismos)
+# FILTROS (provincia + canton + estructura)
 # =========================
 with st.sidebar:
     st.header("Filtros")
@@ -431,11 +535,12 @@ with left:
     st.plotly_chart(fig_bar, use_container_width=True)
 
     st.subheader("Tabla normalizada")
-    # ✅ solo canton + estructura (como pediste)
+    # ✅ SOLO provincia, canton, estructura + sin índice
     st.dataframe(
-        f[["canton", "estructura"]].sort_values(["canton", "estructura"]),
+        f[["provincia", "canton", "estructura"]].sort_values(["provincia", "canton", "estructura"]),
         use_container_width=True,
-        height=360
+        height=360,
+        hide_index=True
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -456,7 +561,7 @@ with right:
 st.markdown("<hr/>", unsafe_allow_html=True)
 
 # =========================
-# DESCARGA + RESUMEN (SIN INDENTACIÓN RARA)
+# DESCARGA + RESUMEN (IGUAL)
 # =========================
 csv_bytes = f.to_csv(index=False).encode("utf-8")
 st.download_button(
@@ -470,4 +575,3 @@ st.markdown(
     f"<div class='caption'>Resumen: <b>{estructuras_unicas}</b> estructuras únicas en <b>{cantones_unicos}</b> cantones (según filtros).</div>",
     unsafe_allow_html=True
 )
-
