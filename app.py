@@ -14,7 +14,7 @@ from streamlit_folium import st_folium
 st.set_page_config(page_title="CR | Cantones y estructuras", page_icon="🛰️", layout="wide")
 
 # =========================
-# ESTILO (profesional, limpio) - IGUAL
+# ESTILO (IGUAL)
 # =========================
 st.markdown(
     """
@@ -45,13 +45,13 @@ st.markdown(
 )
 
 # =========================
-# SESSION STATE (igual)
+# SESSION STATE (IGUAL)
 # =========================
 if "map_fullscreen" not in st.session_state:
     st.session_state["map_fullscreen"] = False
 
 # =========================
-# COLORES POR PROVINCIA (NUEVO - SOLO ESTO)
+# COLORES POR PROVINCIA (NUEVO, SOLO PARA MARCAS)
 # =========================
 PROV_COLORS = {
     "San Jose": {"stroke": "#6d28d9", "fill": "#8b5cf6"},   # morado
@@ -61,9 +61,13 @@ PROV_COLORS = {
 }
 
 # =========================
-# DATOS (SAN JOSÉ + NUEVAS PROVINCIAS)
+# DATOS (MATRIZ ANCHA) — NO RESUMIDO
 # =========================
+# NOTA: Cada fila trae 10 "celdas" de estructuras (e1..e10) como tu Excel.
 RAW_BY_PROV = {
+    # -----------------------
+    # SAN JOSE (tu prueba 1)
+    # -----------------------
     "San Jose": [
         ("San Jose", [
             "Los Lara (San Sebastia)", "Los coqueros (Pavas)", "Los Moreco", "Turesky", "Pollo",
@@ -90,7 +94,9 @@ RAW_BY_PROV = {
         ("Leon Cortes", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
     ],
 
-    # === NUEVO: ALAJUELA (según tu pantallazo) ===
+    # -----------------------
+    # ALAJUELA (según pantallazo visible)
+    # -----------------------
     "Alajuela": [
         ("Alajuela", ["La hyena", "Diablo - Alejandro Arias", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Los Ungas", "Cascaritas (San Antonio y El Roble)", ""]),
         ("San Ramon", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
@@ -110,7 +116,9 @@ RAW_BY_PROV = {
         ("Rio Cuarto", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
     ],
 
-    # === NUEVO: CARTAGO (según tu pantallazo) ===
+    # -----------------------
+    # CARTAGO (según pantallazo visible)
+    # -----------------------
     "Cartago": [
         ("Cartago", ["Los Maruja", "", "", "", "", "", "", "Chacales", "Pollo", "Turco"]),
         ("Paraiso", ["Los Maruja", "", "", "", "", "", "", "", "", ""]),
@@ -122,7 +130,9 @@ RAW_BY_PROV = {
         ("El Guarco", ["Los Maruja", "", "", "", "", "", "", "Hermanos Gary Gery", "Palomo", "Los Maruja"]),
     ],
 
-    # === NUEVO: HEREDIA (según tu pantallazo) ===
+    # -----------------------
+    # HEREDIA (según pantallazo visible)
+    # -----------------------
     "Heredia": [
         ("Heredia", ["Lara", "Myrie", "Polacos", "Hermanos Ga", "Shaggy", "", "", "Pipis (Guararri y Los ...)", "Zepol", ""]),
         ("Barba", ["", "", "", "", "", "", "", "", "", ""]),
@@ -138,7 +148,7 @@ RAW_BY_PROV = {
 }
 
 # =========================
-# COORDENADAS (centroides aprox.)
+# COORDENADAS (centroides cantonales aprox. para mapear ya)
 # =========================
 CANTON_COORDS = {
     # San José
@@ -205,7 +215,7 @@ CANTON_COORDS = {
 }
 
 # =========================
-# HELPERS (IGUAL, solo agrega provincia)
+# HELPERS (IGUAL)
 # =========================
 def clean_txt(x: str) -> str:
     if pd.isna(x):
@@ -244,7 +254,7 @@ def add_coords(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 # =========================
-# BUILD DATA
+# BUILD DATA (IGUAL)
 # =========================
 wide = build_wide_df()
 long = add_coords(normalize_long(wide))
@@ -256,7 +266,7 @@ st.markdown("<div class='title'>Cantones y estructuras (Prueba 1)</div>", unsafe
 st.markdown("<div class='subtitle'>Mapa satelital ESRI, puntos por cantón y detalle de estructuras por ubicación.</div>", unsafe_allow_html=True)
 
 # =========================
-# FILTROS (NUEVO: provincia + los mismos de antes)
+# FILTROS (NUEVO provincia + los mismos)
 # =========================
 with st.sidebar:
     st.header("Filtros")
@@ -421,7 +431,7 @@ with left:
     st.plotly_chart(fig_bar, use_container_width=True)
 
     st.subheader("Tabla normalizada")
-    # ✅ sigue solo canton + estructura (como vos pediste)
+    # ✅ solo canton + estructura (como pediste)
     st.dataframe(
         f[["canton", "estructura"]].sort_values(["canton", "estructura"]),
         use_container_width=True,
@@ -445,6 +455,9 @@ with right:
 
 st.markdown("<hr/>", unsafe_allow_html=True)
 
+# =========================
+# DESCARGA + RESUMEN (SIN INDENTACIÓN RARA)
+# =========================
 csv_bytes = f.to_csv(index=False).encode("utf-8")
 st.download_button(
     "⬇️ Descargar datos filtrados (CSV)",
@@ -454,10 +467,6 @@ st.download_button(
 )
 
 st.markdown(
-    f"<div class='caption'>Resumen: <b>{estructuras_unicas}</b> estructuras únicas en <b>{cantones_unicos}</b> cantones (según filtros).</div>",
-    unsafe_allow_html=True
-)
-
     f"<div class='caption'>Resumen: <b>{estructuras_unicas}</b> estructuras únicas en <b>{cantones_unicos}</b> cantones (según filtros).</div>",
     unsafe_allow_html=True
 )
