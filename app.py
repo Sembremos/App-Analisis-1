@@ -8,54 +8,56 @@ import plotly.express as px
 import folium
 from streamlit_folium import st_folium
 
-# ======================================================
-# CONFIGURACIÓN GENERAL
-# ======================================================
-st.set_page_config(
-    page_title="Costa Rica | Cantones y Estructuras",
-    page_icon="🛰️",
-    layout="wide"
+# =========================
+# CONFIG
+# =========================
+st.set_page_config(page_title="CR | Cantones y estructuras", page_icon="🛰️", layout="wide")
+
+# =========================
+# ESTILO (profesional, limpio)
+# =========================
+st.markdown(
+    """
+    <style>
+      .block-container {padding-top: 1.0rem; padding-bottom: 2rem;}
+      .title{font-size: 28px; font-weight: 900; letter-spacing: -0.02em; margin-bottom: 2px;}
+      .subtitle{color:#6b7280; margin-top:0px; margin-bottom: 14px;}
+      .kpi-grid{display:flex; gap:14px; flex-wrap:wrap; margin-bottom: 10px;}
+      .kpi{
+        background:#ffffff; border:1px solid #e5e7eb; border-radius:18px;
+        padding:16px 18px; box-shadow:0 10px 25px rgba(0,0,0,0.06);
+        min-width: 240px; flex:1;
+      }
+      .kpi-label{color:#111827; font-weight:800; font-size:14px; letter-spacing:0.01em;}
+      .kpi-value{color:#111827; font-weight:900; font-size:44px; margin-top:6px; line-height:1;}
+      .kpi-sub{color:#6b7280; font-size:12px; margin-top:6px;}
+      .panel{
+        background:#ffffff; border:1px solid #e5e7eb; border-radius:18px;
+        padding:14px 16px; box-shadow:0 10px 25px rgba(0,0,0,0.05);
+      }
+      hr {border:none; border-top:1px solid #e5e7eb; margin: 16px 0;}
+      .caption{color:#6b7280; font-size:12px;}
+      .btnrow{display:flex; gap:10px; align-items:center; margin: 6px 0 10px 0;}
+      .mapwrap{border-radius:18px; overflow:hidden;}
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
-# ======================================================
-# ESTILOS (PROFESIONAL / LIMPIO)
-# ======================================================
-st.markdown("""
-<style>
-.block-container {padding-top: 1rem; padding-bottom: 2rem;}
-.title {font-size:28px;font-weight:900;letter-spacing:-0.02em;}
-.subtitle {color:#6b7280;margin-bottom:16px;}
-.kpi-grid{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
-.kpi{
-  background:#ffffff;border:1px solid #e5e7eb;border-radius:18px;
-  padding:16px 18px;box-shadow:0 10px 25px rgba(0,0,0,0.06);
-  min-width:240px;flex:1;
-}
-.kpi-label{font-weight:800;font-size:14px;color:#111827;}
-.kpi-value{font-size:44px;font-weight:900;color:#111827;line-height:1;}
-.kpi-sub{font-size:12px;color:#6b7280;}
-.panel{
-  background:#ffffff;border:1px solid #e5e7eb;border-radius:18px;
-  padding:14px 16px;box-shadow:0 10px 25px rgba(0,0,0,0.05);
-}
-hr{border:none;border-top:1px solid #e5e7eb;margin:16px 0;}
-.caption{font-size:12px;color:#6b7280;}
-.mapwrap{border-radius:18px;overflow:hidden;}
-.btnrow{display:flex;gap:10px;align-items:center;margin:6px 0;}
-</style>
-""", unsafe_allow_html=True)
-
-# ======================================================
+# =========================
 # SESSION STATE
-# ======================================================
+# =========================
 if "map_fullscreen" not in st.session_state:
-    st.session_state.map_fullscreen = False
+    st.session_state["map_fullscreen"] = False
 
-# ======================================================
-# DATOS (PANTALLAZO – SAN JOSÉ)
-# ======================================================
+# =========================
+# DATOS (pantallazo)
+# =========================
 RAW_WIDE = [
-    ("San Jose", ["Los Lara (San Sebastia)", "Los coqueros (Pavas)", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Los Picudos (Carpio)", "Los Diablos (Pavas)", "Los Polacos (Pavas)"]),
+    ("San Jose", [
+        "Los Lara (San Sebastia)", "Los coqueros (Pavas)", "Los Moreco", "Turesky", "Pollo",
+        "Indio", "Ojos Bellos", "Los Picudos (Carpio)", "Los Diablos (Pavas)", "Los Polacos (Pavas)"
+    ]),
     ("Escazu", ["Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
     ("Desamparados", ["Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
     ("Puriscal", ["Los Lara", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
@@ -100,125 +102,244 @@ CANTON_COORDS = {
     "Leon Cortes": (9.6770, -84.0470),
 }
 
-# ======================================================
-# NORMALIZACIÓN
-# ======================================================
-rows = []
-for canton, structs in RAW_WIDE:
-    for e in structs:
-        if e:
-            rows.append({
-                "canton": canton,
-                "estructura": e,
-                "lat": CANTON_COORDS[canton][0],
-                "lon": CANTON_COORDS[canton][1]
-            })
+# =========================
+# HELPERS
+# =========================
+def clean_txt(x: str) -> str:
+    if pd.isna(x):
+        return ""
+    x = str(x).strip()
+    x = re.sub(r"\s+", " ", x)
+    return x
 
-df = pd.DataFrame(rows)
+def build_wide_df() -> pd.DataFrame:
+    rows = []
+    for canton, structs in RAW_WIDE:
+        r = {"canton": canton}
+        for i in range(10):
+            r[f"e{i+1}"] = structs[i] if i < len(structs) else ""
+        rows.append(r)
+    return pd.DataFrame(rows)
 
-# ======================================================
+def normalize_long(df_wide: pd.DataFrame) -> pd.DataFrame:
+    struct_cols = [c for c in df_wide.columns if c.startswith("e")]
+    long = df_wide.melt(
+        id_vars=["canton"],
+        value_vars=struct_cols,
+        var_name="col",
+        value_name="estructura"
+    )
+    long["estructura"] = long["estructura"].apply(clean_txt)
+    long = long[long["estructura"].str.len() > 0].copy()
+    long.drop(columns=["col"], inplace=True)
+    return long.reset_index(drop=True)
+
+def add_coords(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df["lat"] = df["canton"].map(lambda c: CANTON_COORDS.get(c, (None, None))[0])
+    df["lon"] = df["canton"].map(lambda c: CANTON_COORDS.get(c, (None, None))[1])
+    return df
+
+# =========================
+# BUILD DATA
+# =========================
+wide = build_wide_df()
+long = add_coords(normalize_long(wide))
+
+# =========================
+# HEADER
+# =========================
+st.markdown("<div class='title'>Cantones y estructuras (Prueba 1)</div>", unsafe_allow_html=True)
+st.markdown("<div class='subtitle'>Mapa satelital ESRI, puntos por cantón y detalle de estructuras por ubicación.</div>", unsafe_allow_html=True)
+
+# =========================
 # FILTROS
-# ======================================================
+# =========================
 with st.sidebar:
     st.header("Filtros")
-    cant_sel = st.multiselect("Cantón", sorted(df.canton.unique()))
-    estr_sel = st.multiselect("Estructura", sorted(df.estructura.unique()))
+    cantones = sorted(long["canton"].unique().tolist())
+    estructuras = sorted(long["estructura"].unique().tolist())
+    cant_sel = st.multiselect("Cantón", cantones, default=[])
+    estr_sel = st.multiselect("Estructura", estructuras, default=[])
 
-f = df.copy()
+f = long.copy()
 if cant_sel:
-    f = f[f.canton.isin(cant_sel)]
+    f = f[f["canton"].isin(cant_sel)]
 if estr_sel:
-    f = f[f.estructura.isin(estr_sel)]
+    f = f[f["estructura"].isin(estr_sel)]
 
-# ======================================================
-# KPIs (A PRUEBA DE ERRORES)
-# ======================================================
-cantones_unicos = f.canton.nunique()
-estructuras_unicas = f.estructura.nunique()
-estructuras_unicos = estructuras_unicas  # alias defensivo
+cantones_unicos = f["canton"].nunique()
+estructuras_unicas = f["estructura"].nunique()
+estructuras_unicos = estructuras_unicas  # alias defensivo (por si alguien escribe mal)
 
-st.markdown("""
-<div class="title">Cantones y estructuras</div>
-<div class="subtitle">Mapa satelital ESRI con detalle por cantón</div>
-""", unsafe_allow_html=True)
+# =========================
+# KPI (solo Cantones y Estructuras)
+# =========================
+st.markdown(
+    f"""
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="kpi-label">Cantones</div>
+        <div class="kpi-value">{cantones_unicos:,}</div>
+        <div class="kpi-sub">Total según filtros</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Estructuras</div>
+        <div class="kpi-value">{estructuras_unicas:,}</div>
+        <div class="kpi-sub">Únicas según filtros</div>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
-st.markdown(f"""
-<div class="kpi-grid">
-  <div class="kpi">
-    <div class="kpi-label">Cantones</div>
-    <div class="kpi-value">{cantones_unicos}</div>
-  </div>
-  <div class="kpi">
-    <div class="kpi-label">Estructuras</div>
-    <div class="kpi-value">{estructuras_unicas}</div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+st.markdown("<hr/>", unsafe_allow_html=True)
 
-# ======================================================
-# MAPA
-# ======================================================
-def render_map(data, height):
-    grp = data.groupby(["canton", "lat", "lon"]).agg(
-        estructuras=("estructura", lambda x: sorted(set(x)))
-    ).reset_index()
+# =========================
+# MAP BUILDER (misma vista por datos; fullscreen solo cambia layout/alto)
+# =========================
+def render_map(df_filtered: pd.DataFrame, height_px: int):
+    fm = df_filtered.dropna(subset=["lat", "lon"]).copy()
+    if fm.empty:
+        st.warning("No hay puntos con coordenadas para mostrar.")
+        return
 
-    m = folium.Map(
-        location=[grp.lat.mean(), grp.lon.mean()],
-        zoom_start=8,
-        tiles=None
+    grp = (
+        fm.groupby(["canton", "lat", "lon"])
+        .agg(
+            registros=("estructura", "count"),
+            estructuras=("estructura", lambda s: sorted(set(s)))
+        )
+        .reset_index()
     )
 
+    # Vista normal: centrada por promedio de datos (como antes)
+    center_lat = float(grp["lat"].mean())
+    center_lon = float(grp["lon"].mean())
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=8, control_scale=True, tiles=None)
+
     folium.TileLayer(
-        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="ESRI",
-        name="Satélite"
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri, Maxar, Earthstar Geographics, CNES/Airbus DS, USDA, USGS",
+        name="ESRI Satélite",
+        overlay=False,
+        control=True
     ).add_to(m)
 
     folium.TileLayer(
-        "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-        attr="ESRI",
-        overlay=True
+        tiles="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri",
+        name="Límites y lugares",
+        overlay=True,
+        control=True,
+        opacity=0.95
     ).add_to(m)
+
+    folium.LayerControl(collapsed=True).add_to(m)
 
     for _, r in grp.iterrows():
-        html = f"<b>{r.canton}</b><ul>" + "".join([f"<li>{e}</li>" for e in r.estructuras]) + "</ul>"
+        canton = r["canton"]
+        estructuras_list = r["estructuras"]
+        registros = int(r["registros"])
+
+        html = f"""
+        <div style="font-family: Arial; font-size: 13px; line-height: 1.25;">
+          <div style="font-size: 14px;"><b>{canton}</b></div>
+          <div><b>Estructuras:</b> {len(estructuras_list)}</div>
+          <div style="margin-top:6px;"><b>Listado:</b></div>
+          <ul style="margin: 6px 0 0 18px; padding: 0;">
+            {''.join([f'<li>{e}</li>' for e in estructuras_list])}
+          </ul>
+        </div>
+        """
+        popup = folium.Popup(html, max_width=380)
+        tooltip = f"{canton} | {len(estructuras_list)} estructuras"
+
+        radius = 6 + min(16, registros * 1.2)
         folium.CircleMarker(
-            [r.lat, r.lon],
-            radius=10,
+            location=[float(r["lat"]), float(r["lon"])],
+            radius=radius,
+            weight=2,
             color="#6d28d9",
             fill=True,
-            fill_opacity=0.6,
-            popup=html
+            fill_color="#8b5cf6",
+            fill_opacity=0.55,
+            tooltip=tooltip,
+            popup=popup
         ).add_to(m)
 
-    st_folium(m, use_container_width=True, height=height)
+    st.markdown("<div class='mapwrap'>", unsafe_allow_html=True)
+    st_folium(m, use_container_width=True, height=height_px)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# ======================================================
-# FULLSCREEN
-# ======================================================
-if st.session_state.map_fullscreen:
+# =========================
+# FULLSCREEN MODE (solo layout)
+# =========================
+if st.session_state["map_fullscreen"]:
+    st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
     if st.button("⬅️ Salir de pantalla completa"):
-        st.session_state.map_fullscreen = False
+        st.session_state["map_fullscreen"] = False
         st.rerun()
-    render_map(f, 920)
+    st.markdown("<span class='caption'>Modo pantalla completa: el mapa ocupa casi toda la pantalla.</span>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    render_map(f, height_px=920)
     st.stop()
 
-# ======================================================
-# LAYOUT NORMAL
-# ======================================================
-col1, col2 = st.columns([1, 1.2])
+# =========================
+# VISTA NORMAL (gráfico + tabla + mapa)
+# =========================
+left, right = st.columns([1.05, 0.95], gap="large")
 
-with col1:
+with left:
     st.markdown("<div class='panel'>", unsafe_allow_html=True)
-    st.subheader("Tabla")
-    st.dataframe(f[["canton", "estructura"]], use_container_width=True, height=380)
+    st.subheader("Top estructuras (conteos)")
+    top_struct = (
+        f.groupby("estructura")
+        .size()
+        .reset_index(name="conteo")
+        .sort_values("conteo", ascending=False)
+        .head(15)
+    )
+    fig_bar = px.bar(top_struct, x="conteo", y="estructura", orientation="h")
+    fig_bar.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10))
+    st.plotly_chart(fig_bar, use_container_width=True)
+
+    st.subheader("Tabla normalizada")
+    # ✅ SOLO canton + estructura (como pediste)
+    st.dataframe(
+        f[["canton", "estructura"]].sort_values(["canton", "estructura"]),
+        use_container_width=True,
+        height=360
+    )
     st.markdown("</div>", unsafe_allow_html=True)
 
-with col2:
+with right:
     st.markdown("<div class='panel'>", unsafe_allow_html=True)
+    st.subheader("Mapa satelital (ESRI) — puntos por cantón")
+
+    st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
     if st.button("⛶ Ver mapa en pantalla completa"):
-        st.session_state.map_fullscreen = True
+        st.session_state["map_fullscreen"] = True
         st.rerun()
-    render_map(f, 720)
+    st.markdown("<span class='caption'>Abre el mapa ocupando casi toda la pantalla.</span>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
+
+    render_map(f, height_px=820)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown("<hr/>", unsafe_allow_html=True)
+
+csv_bytes = f.to_csv(index=False).encode("utf-8")
+st.download_button(
+    "⬇️ Descargar datos filtrados (CSV)",
+    data=csv_bytes,
+    file_name="cantones_estructuras_normalizado.csv",
+    mime="text/csv"
+)
+
+st.markdown(
+    f"<div class='caption'>Resumen: <b>{estructuras_unicas}</b> estructuras únicas en <b>{cantones_unicos}</b> cantones (según filtros).</div>",
+    unsafe_allow_html=True
+)
