@@ -139,19 +139,12 @@ def add_coords(df: pd.DataFrame) -> pd.DataFrame:
     df["lon"] = df["canton"].map(lambda c: CANTON_COORDS.get(c, (None, None))[1])
     return df
 
-# Build data
 wide = build_wide_df()
 long = add_coords(normalize_long(wide))
 
-# =========================
-# HEADER
-# =========================
 st.markdown("<div class='title'>Cantones y estructuras (Prueba 1)</div>", unsafe_allow_html=True)
 st.markdown("<div class='subtitle'>Mapa satelital ESRI, puntos por cantón y detalle de estructuras por ubicación.</div>", unsafe_allow_html=True)
 
-# =========================
-# SIDEBAR FILTERS
-# =========================
 with st.sidebar:
     st.header("Filtros")
     cantones = sorted(long["canton"].unique().tolist())
@@ -168,9 +161,7 @@ if estr_sel:
 cantones_unicos = f["canton"].nunique()
 estructuras_unicas = f["estructura"].nunique()
 
-# =========================
-# KPI (solo Cantones y Estructuras)
-# =========================
+# ✅ KPI corregido: usa estructuras_unicas (NO estructuras_unicos)
 st.markdown(
     f"""
     <div class="kpi-grid">
@@ -181,7 +172,7 @@ st.markdown(
       </div>
       <div class="kpi">
         <div class="kpi-label">Estructuras</div>
-        <div class="kpi-value">{estructuras_unicos:,}</div>
+        <div class="kpi-value">{estructuras_unicas:,}</div>
         <div class="kpi-sub">Únicas según filtros</div>
       </div>
     </div>
@@ -191,9 +182,6 @@ st.markdown(
 
 st.markdown("<hr/>", unsafe_allow_html=True)
 
-# =========================
-# MAP BUILDER (misma vista por datos; fullscreen solo cambia layout/alto)
-# =========================
 def render_map(df_filtered: pd.DataFrame, height_px: int):
     fm = df_filtered.dropna(subset=["lat", "lon"]).copy()
     if fm.empty:
@@ -209,7 +197,6 @@ def render_map(df_filtered: pd.DataFrame, height_px: int):
         .reset_index()
     )
 
-    # Vista normal: centrada exactamente igual que antes (por promedio de datos)
     center_lat = float(grp["lat"].mean())
     center_lon = float(grp["lon"].mean())
 
@@ -269,25 +256,15 @@ def render_map(df_filtered: pd.DataFrame, height_px: int):
     st_folium(m, use_container_width=True, height=height_px)
     st.markdown("</div>", unsafe_allow_html=True)
 
-# =========================
-# FULLSCREEN MODE (solo cambia layout, NO la vista del mapa)
-# =========================
+# FULLSCREEN
 if st.session_state["map_fullscreen"]:
-    # Barra superior fullscreen
-    st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
-    if st.button("⬅️ Salir de pantalla completa", use_container_width=False):
+    if st.button("⬅️ Salir de pantalla completa"):
         st.session_state["map_fullscreen"] = False
         st.rerun()
-    st.markdown("<span class='caption'>Modo pantalla completa: el mapa ocupa casi toda la pantalla (sin cambiar la vista).</span>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # Mapa gigante: ~92% de alto visible
     render_map(f, height_px=920)
     st.stop()
 
-# =========================
-# NORMAL VIEW (tu vista normal igual)
-# =========================
+# NORMAL VIEW
 left, right = st.columns([1.05, 0.95], gap="large")
 
 with left:
@@ -317,14 +294,10 @@ with right:
     st.markdown("<div class='panel'>", unsafe_allow_html=True)
     st.subheader("Mapa satelital (ESRI) — puntos por cantón")
 
-    st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
     if st.button("⛶ Ver mapa en pantalla completa"):
         st.session_state["map_fullscreen"] = True
         st.rerun()
-    st.markdown("<span class='caption'>Abre el mapa ocupando casi toda la pantalla, sin cambiar la vista actual.</span>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
 
-    # Mapa normal: exactamente como lo tenías (misma lógica de center/zoom)
     render_map(f, height_px=820)
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -339,11 +312,6 @@ st.download_button(
 )
 
 st.markdown(
-    f"<div class='caption'>Resumen: <b>{estructuras_unicos}</b> estructuras únicas en <b>{cantones_unicos}</b> cantones (según filtros).</div>",
+    f"<div class='caption'>Resumen: <b>{estructuras_unicas}</b> estructuras únicas en <b>{cantones_unicos}</b> cantones (según filtros).</div>",
     unsafe_allow_html=True
 )
-
-
-
-
-
