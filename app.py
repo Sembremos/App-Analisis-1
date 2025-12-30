@@ -65,6 +65,10 @@ st.markdown(
 if "map_fullscreen" not in st.session_state:
     st.session_state["map_fullscreen"] = False
 
+# ✅ NUEVO: fullscreen para pestaña Bandas (sin tocar tu estado original)
+if "map_fullscreen_bandas" not in st.session_state:
+    st.session_state["map_fullscreen_bandas"] = False
+
 # =========================
 # COLORES POR PROVINCIA (IGUAL)
 # =========================
@@ -306,6 +310,13 @@ CANTON_COORDS = {
     "Talamanca": (9.6200, -82.8500),
     "Matina": (10.0800, -83.3000),
     "Guacimo": (10.2100, -83.6800),
+
+    # ✅ NUEVOS para Bandas (no afectan tu pestaña actual)
+    "Penas Blancas": (10.9780, -84.7370),
+    "Cobano": (9.6840, -85.0960),
+    "Quepos": (9.4310, -84.1620),
+    "Atenas": (9.9800, -84.3820),
+    "Orotina": (9.9100, -84.5220),
 }
 
 # =========================
@@ -348,224 +359,646 @@ wide = build_wide_df()
 long = add_coords(normalize_long(wide))
 
 # =========================
-# HEADER (IGUAL)
+# ✅ TABS (para agregar nueva pestaña sin tocar tu lógica)
 # =========================
-st.markdown("<div class='title'>Cantones y estructuras (Prueba 1)</div>", unsafe_allow_html=True)
-st.markdown("<div class='subtitle'>Mapa satelital ESRI, puntos por cantón y detalle de estructuras por ubicación.</div>", unsafe_allow_html=True)
+tab_estructuras, tab_bandas = st.tabs(["🛰️ Cantones y estructuras", "🎶 Bandas / Beneficiarios"])
 
-# =========================
-# FILTROS (provincia + canton + estructura) (IGUAL)
-# =========================
-with st.sidebar:
-    st.header("Filtros")
+# =============================================================================
+# ============================== TAB 1 (TU APP ACTUAL) =========================
+# =============================================================================
+with tab_estructuras:
 
-    provincias = sorted(long["provincia"].unique().tolist())
-    prov_sel = st.multiselect("Provincia", provincias, default=[])
+    # =========================
+    # HEADER (IGUAL)
+    # =========================
+    st.markdown("<div class='title'>Cantones y estructuras (Prueba 1)</div>", unsafe_allow_html=True)
+    st.markdown("<div class='subtitle'>Mapa satelital ESRI, puntos por cantón y detalle de estructuras por ubicación.</div>", unsafe_allow_html=True)
 
-    cantones = sorted(long["canton"].unique().tolist())
-    estructuras = sorted(long["estructura"].unique().tolist())
+    # =========================
+    # FILTROS (provincia + canton + estructura) (IGUAL)
+    # =========================
+    with st.sidebar:
+        st.header("Filtros")
 
-    cant_sel = st.multiselect("Cantón", cantones, default=[])
-    estr_sel = st.multiselect("Estructura", estructuras, default=[])
+        provincias = sorted(long["provincia"].unique().tolist())
+        prov_sel = st.multiselect("Provincia", provincias, default=[])
 
-f = long.copy()
-if prov_sel:
-    f = f[f["provincia"].isin(prov_sel)]
-if cant_sel:
-    f = f[f["canton"].isin(cant_sel)]
-if estr_sel:
-    f = f[f["estructura"].isin(estr_sel)]
+        cantones = sorted(long["canton"].unique().tolist())
+        estructuras = sorted(long["estructura"].unique().tolist())
 
-cantones_unicos = f["canton"].nunique()
-estructuras_unicas = f["estructura"].nunique()
+        cant_sel = st.multiselect("Cantón", cantones, default=[])
+        estr_sel = st.multiselect("Estructura", estructuras, default=[])
 
-# =========================
-# KPI (IGUAL pero con color)
-# =========================
-st.markdown(
-    f"""
-    <div class="kpi-grid">
-      <div class="kpi kpi-cantones">
-        <div class="kpi-label">Cantones</div>
-        <div class="kpi-value">{cantones_unicos:,}</div>
-        <div class="kpi-sub">Total según filtros</div>
-      </div>
-      <div class="kpi kpi-estructuras">
-        <div class="kpi-label">Estructuras</div>
-        <div class="kpi-value">{estructuras_unicas:,}</div>
-        <div class="kpi-sub">Únicas según filtros</div>
-      </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+    f = long.copy()
+    if prov_sel:
+        f = f[f["provincia"].isin(prov_sel)]
+    if cant_sel:
+        f = f[f["canton"].isin(cant_sel)]
+    if estr_sel:
+        f = f[f["estructura"].isin(estr_sel)]
 
-st.markdown("<hr/>", unsafe_allow_html=True)
+    cantones_unicos = f["canton"].nunique()
+    estructuras_unicas = f["estructura"].nunique()
 
-# =========================
-# MAP BUILDER (IGUAL)
-# =========================
-def render_map(df_filtered: pd.DataFrame, height_px: int):
-    fm = df_filtered.dropna(subset=["lat", "lon"]).copy()
-    if fm.empty:
-        st.warning("No hay puntos con coordenadas para mostrar.")
-        return
-
-    grp = (
-        fm.groupby(["provincia", "canton", "lat", "lon"])
-        .agg(
-            registros=("estructura", "count"),
-            estructuras=("estructura", lambda s: sorted(set(s)))
-        )
-        .reset_index()
+    # =========================
+    # KPI (IGUAL pero con color)
+    # =========================
+    st.markdown(
+        f"""
+        <div class="kpi-grid">
+          <div class="kpi kpi-cantones">
+            <div class="kpi-label">Cantones</div>
+            <div class="kpi-value">{cantones_unicos:,}</div>
+            <div class="kpi-sub">Total según filtros</div>
+          </div>
+          <div class="kpi kpi-estructuras">
+            <div class="kpi-label">Estructuras</div>
+            <div class="kpi-value">{estructuras_unicas:,}</div>
+            <div class="kpi-sub">Únicas según filtros</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True
     )
 
-    center_lat = float(grp["lat"].mean())
-    center_lon = float(grp["lon"].mean())
+    st.markdown("<hr/>", unsafe_allow_html=True)
 
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=8, control_scale=True, tiles=None)
+    # =========================
+    # MAP BUILDER (IGUAL)
+    # =========================
+    def render_map(df_filtered: pd.DataFrame, height_px: int):
+        fm = df_filtered.dropna(subset=["lat", "lon"]).copy()
+        if fm.empty:
+            st.warning("No hay puntos con coordenadas para mostrar.")
+            return
 
-    folium.TileLayer(
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="Esri, Maxar, Earthstar Geographics, CNES/Airbus DS, USDA, USGS",
-        name="ESRI Satélite",
-        overlay=False,
-        control=True
-    ).add_to(m)
+        grp = (
+            fm.groupby(["provincia", "canton", "lat", "lon"])
+            .agg(
+                registros=("estructura", "count"),
+                estructuras=("estructura", lambda s: sorted(set(s)))
+            )
+            .reset_index()
+        )
 
-    folium.TileLayer(
-        tiles="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-        attr="Esri",
-        name="Límites y lugares",
-        overlay=True,
-        control=True,
-        opacity=0.95
-    ).add_to(m)
+        center_lat = float(grp["lat"].mean())
+        center_lon = float(grp["lon"].mean())
 
-    folium.LayerControl(collapsed=True).add_to(m)
+        m = folium.Map(location=[center_lat, center_lon], zoom_start=8, control_scale=True, tiles=None)
 
-    for _, r in grp.iterrows():
-        provincia = r["provincia"]
-        canton = r["canton"]
-        estructuras_list = r["estructuras"]
-        registros = int(r["registros"])
-
-        colors = PROV_COLORS.get(provincia, {"stroke": "#111827", "fill": "#9ca3af"})
-
-        html = f"""
-        <div style="font-family: Arial; font-size: 13px; line-height: 1.25;">
-          <div style="font-size: 14px;"><b>{canton}</b></div>
-          <div><b>Provincia:</b> {provincia}</div>
-          <div><b>Estructuras:</b> {len(estructuras_list)}</div>
-          <div style="margin-top:6px;"><b>Listado:</b></div>
-          <ul style="margin: 6px 0 0 18px; padding: 0;">
-            {''.join([f'<li>{e}</li>' for e in estructuras_list])}
-          </ul>
-        </div>
-        """
-        popup = folium.Popup(html, max_width=420)
-        tooltip = f"{canton} ({provincia}) | {len(estructuras_list)} estructuras"
-
-        radius = 6 + min(16, registros * 1.2)
-
-        folium.CircleMarker(
-            location=[float(r["lat"]), float(r["lon"])],
-            radius=radius,
-            weight=2,
-            color=colors["stroke"],
-            fill=True,
-            fill_color=colors["fill"],
-            fill_opacity=0.55,
-            tooltip=tooltip,
-            popup=popup
+        folium.TileLayer(
+            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            attr="Esri, Maxar, Earthstar Geographics, CNES/Airbus DS, USDA, USGS",
+            name="ESRI Satélite",
+            overlay=False,
+            control=True
         ).add_to(m)
 
-    st.markdown("<div class='mapwrap'>", unsafe_allow_html=True)
-    st_folium(m, use_container_width=True, height=height_px)
-    st.markdown("</div>", unsafe_allow_html=True)
+        folium.TileLayer(
+            tiles="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+            attr="Esri",
+            name="Límites y lugares",
+            overlay=True,
+            control=True,
+            opacity=0.95
+        ).add_to(m)
 
-# =========================
-# FULLSCREEN MODE (IGUAL)
-# =========================
-if st.session_state["map_fullscreen"]:
-    st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
-    if st.button("⬅️ Salir de pantalla completa"):
-        st.session_state["map_fullscreen"] = False
-        st.rerun()
-    st.markdown("<span class='caption'>Modo pantalla completa: el mapa ocupa casi toda la pantalla.</span>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+        folium.LayerControl(collapsed=True).add_to(m)
 
-    render_map(f, height_px=920)
-    st.stop()
+        for _, r in grp.iterrows():
+            provincia = r["provincia"]
+            canton = r["canton"]
+            estructuras_list = r["estructuras"]
+            registros = int(r["registros"])
 
-# =========================
-# VISTA NORMAL (IGUAL)
-# =========================
-left, right = st.columns([1.05, 0.95], gap="large")
+            colors = PROV_COLORS.get(provincia, {"stroke": "#111827", "fill": "#9ca3af"})
 
-with left:
-    st.markdown("<div class='panel'>", unsafe_allow_html=True)
-    st.subheader("Top estructuras (conteos)")
+            html = f"""
+            <div style="font-family: Arial; font-size: 13px; line-height: 1.25;">
+              <div style="font-size: 14px;"><b>{canton}</b></div>
+              <div><b>Provincia:</b> {provincia}</div>
+              <div><b>Estructuras:</b> {len(estructuras_list)}</div>
+              <div style="margin-top:6px;"><b>Listado:</b></div>
+              <ul style="margin: 6px 0 0 18px; padding: 0;">
+                {''.join([f'<li>{e}</li>' for e in estructuras_list])}
+              </ul>
+            </div>
+            """
+            popup = folium.Popup(html, max_width=420)
+            tooltip = f"{canton} ({provincia}) | {len(estructuras_list)} estructuras"
 
-    # ✅ TOP 10 (nuevo)
-    top_struct = (
-        f.groupby("estructura")
-        .size()
-        .reset_index(name="conteo")
-        .sort_values("conteo", ascending=False)
-        .head(10)
+            radius = 6 + min(16, registros * 1.2)
+
+            folium.CircleMarker(
+                location=[float(r["lat"]), float(r["lon"])],
+                radius=radius,
+                weight=2,
+                color=colors["stroke"],
+                fill=True,
+                fill_color=colors["fill"],
+                fill_opacity=0.55,
+                tooltip=tooltip,
+                popup=popup
+            ).add_to(m)
+
+        st.markdown("<div class='mapwrap'>", unsafe_allow_html=True)
+        st_folium(m, use_container_width=True, height=height_px)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # =========================
+    # FULLSCREEN MODE (IGUAL)
+    # =========================
+    if st.session_state["map_fullscreen"]:
+        st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
+        if st.button("⬅️ Salir de pantalla completa"):
+            st.session_state["map_fullscreen"] = False
+            st.rerun()
+        st.markdown("<span class='caption'>Modo pantalla completa: el mapa ocupa casi toda la pantalla.</span>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        render_map(f, height_px=920)
+        st.stop()
+
+    # =========================
+    # VISTA NORMAL (IGUAL)
+    # =========================
+    left, right = st.columns([1.05, 0.95], gap="large")
+
+    with left:
+        st.markdown("<div class='panel'>", unsafe_allow_html=True)
+        st.subheader("Top estructuras (conteos)")
+
+        # ✅ TOP 10 (nuevo)
+        top_struct = (
+            f.groupby("estructura")
+            .size()
+            .reset_index(name="conteo")
+            .sort_values("conteo", ascending=False)
+            .head(10)
+        )
+        fig_bar = px.bar(top_struct, x="conteo", y="estructura", orientation="h")
+        fig_bar.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+        st.subheader("Tabla normalizada")
+
+        # ✅ Tabla unificada (nuevo): provincia, cantón, lista de estructuras
+        tabla_unificada = (
+            f.groupby(["provincia", "canton"])["estructura"]
+            .apply(lambda s: ", ".join(sorted(set(s))))
+            .reset_index()
+            .rename(columns={"estructura": "estructuras"})
+            .sort_values(["provincia", "canton"])
+        )
+
+        st.dataframe(
+            tabla_unificada[["provincia", "canton", "estructuras"]],
+            use_container_width=True,
+            height=360,
+            hide_index=True
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with right:
+        st.markdown("<div class='panel'>", unsafe_allow_html=True)
+        st.subheader("Mapa satelital (ESRI) — puntos por cantón")
+
+        st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
+        if st.button("⛶ Ver mapa en pantalla completa"):
+            st.session_state["map_fullscreen"] = True
+            st.rerun()
+        st.markdown("<span class='caption'>Abre el mapa ocupando casi toda la pantalla.</span>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        render_map(f, height_px=820)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<hr/>", unsafe_allow_html=True)
+
+    # =========================
+    # DESCARGA + RESUMEN (IGUAL)
+    # =========================
+    csv_bytes = f.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "⬇️ Descargar datos filtrados (CSV)",
+        data=csv_bytes,
+        file_name="cantones_estructuras_normalizado.csv",
+        mime="text/csv"
     )
-    fig_bar = px.bar(top_struct, x="conteo", y="estructura", orientation="h")
-    fig_bar.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10))
-    st.plotly_chart(fig_bar, use_container_width=True)
 
-    st.subheader("Tabla normalizada")
+    st.markdown(
+        f"<div class='caption'>Resumen: <b>{estructuras_unicas}</b> estructuras únicas en <b>{cantones_unicos}</b> cantones (según filtros).</div>",
+        unsafe_allow_html=True
+    )
+# =============================================================================
+# ============================== TAB 2 (NUEVA) =================================
+# =============================================================================
+with tab_bandas:
 
-    # ✅ Tabla unificada (nuevo): provincia, cantón, lista de estructuras
-    tabla_unificada = (
-        f.groupby(["provincia", "canton"])["estructura"]
-        .apply(lambda s: ", ".join(sorted(set(s))))
-        .reset_index()
-        .rename(columns={"estructura": "estructuras"})
-        .sort_values(["provincia", "canton"])
+    # =========================
+    # NORMALIZACIÓN PARA PROVINCIAS/CANTONES (Bandas)
+    # =========================
+    def _strip_accents(s: str) -> str:
+        # sin librerías extra, mapeo básico
+        if s is None:
+            return ""
+        s = str(s)
+        repl = (
+            ("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"),
+            ("Á", "A"), ("É", "E"), ("Í", "I"), ("Ó", "O"), ("Ú", "U"),
+            ("ñ", "n"), ("Ñ", "N")
+        )
+        for a, b in repl:
+            s = s.replace(a, b)
+        return s
+
+    def normalize_prov_bandas(p: str) -> str:
+        p = clean_txt(p)
+        p = _strip_accents(p)
+        p = p.replace(".", "")
+        p = p.replace("  ", " ")
+        p_low = p.lower()
+
+        # llevarlo a las llaves existentes en PROV_COLORS
+        if p_low in ["san jose", "san josé"]:
+            return "San Jose"
+        if p_low == "limon" or p_low == "limón":
+            return "Limon"
+        if p_low == "puntarenas":
+            return "Puntarenas"
+        if p_low == "guanacaste":
+            return "Guanacaste"
+        if p_low == "heredia":
+            return "Heredia"
+        if p_low == "cartago":
+            return "Cartago"
+        if p_low == "alajuela":
+            return "Alajuela"
+        # "Institucion" se deja como viene
+        return p
+
+    def normalize_canton_bandas(c: str) -> str:
+        c = clean_txt(c)
+        c = _strip_accents(c)
+        c = c.replace("  ", " ")
+        # homologar a claves existentes
+        if c.lower() == "peñas blancas":
+            return "Penas Blancas"
+        if c.lower() == "cóbano":
+            return "Cobano"
+        if c.lower() == "río cuarto":
+            return "Rio Cuarto"
+        if c.lower() == "san josé":
+            return "San Jose"
+        if c.lower() == "goicoechea":
+            return "Goicoechea"
+        if c.lower() == "turrialba":
+            return "Turrialba"
+        if c.lower() == "tucurrique":
+            return "Tucurrique"
+        if c.lower() == "pococi":
+            return "Pococi"
+        return c
+
+    # =========================
+    # DATOS DE BANDAS (CARGADOS EN CÓDIGO, COMO VENÍS TRABAJANDO)
+    # =========================
+    BANDAS_RAW = [
+        # Alajuela
+        ("Alajuela", "Alajuela", "Banda Municipal de Alajuela", 82),
+        ("Alajuela", "Atenas", "Banda Escuela Municipal de Atenas", 50),
+        ("Alajuela", "Grecia", "Centro de la Cultura (Academia Edol)", 10),
+        ("Alajuela", "Guatuso", "Centro preventivo", 25),
+        ("Alajuela", "Guatuso", "Banda Escuela Municipal de Guatuso", 25),
+        ("Alajuela", "Los Chiles", "Banda Municipal de Los Chiles", 40),
+        ("Alajuela", "Naranjo", "Banda Escuela de Concepción, Colegio La Candelaria, Banda Municipal", 155),
+        ("Alajuela", "Orotina", "Banda Comunal de Orotina", 250),
+        ("Alajuela", "Palmares", "Banda Escuela Municipal de Palmares", 178),
+        ("Alajuela", "Penas Blancas", "Banda Municipal de Peñas Blancas", 40),
+        ("Alajuela", "Rio Cuarto", "Banda Comunal de Rio Cuarto", 50),
+        ("Alajuela", "San Carlos", "Banda Municipal de San Carlos", 150),
+        ("Alajuela", "San Mateo", "Banda Municipal de San Mateo", 100),
+        ("Alajuela", "Upala", "Escuela Música Municipal de Upala", 100),
+        ("Alajuela", "Zarcero", "Banda de marcha de Zarcero", 300),
+
+        # Cartago (algunos venían sin número visible → se deja como None)
+        ("Cartago", "Cartago", "Banda Escuela de Cartago", None),
+        ("Cartago", "Cervantes", "Banda Escuela for Cerva de Cervantes", None),
+        ("Cartago", "Jimenez", "Escuela Municipal de Música de Jiménez", 79),
+        ("Cartago", "La Union", "Escuela de la Música de La Unión", 20),
+        ("Cartago", "La Union", "Banda Municipal de Marca de la Unión", 30),
+        ("Cartago", "Tucurrique", "Banda Escuela de Tucurrique", None),
+        ("Cartago", "Turrialba", "Banda Municipal de Turrialba", 42),
+
+        # Guanacaste
+        ("Guanacaste", "Abangares", "Banda Melorítmica Lourdes y Pozo Azul (LP)", 32),
+        ("Guanacaste", "Bagaces", "Banda Comunitaria", 27),
+        ("Guanacaste", "Colorado", "Banda Municipal de Marcha de Colorado", 149),
+        ("Guanacaste", "La Cruz", "Escuela de Musica La Cruz", 350),
+        ("Guanacaste", "Nicoya", "Banda de marcha municipal", 180),
+        ("Guanacaste", "Santa Cruz", "Centro Civico por la Paz Santa Cruz/Proy Policiamiento Comunitario", None),
+        ("Guanacaste", "Tilaran", "Banda Escuela Municipal de Tilaran", 150),
+
+        # Heredia
+        ("Heredia", "Barba", "Casa de la música de Barva", 50),
+        ("Heredia", "Flores", "Banda Escuela Municipal de Flores", 50),
+        ("Heredia", "Heredia", "Banda Escuela for Heredia de Heredia", 100),
+        ("Heredia", "San Pablo", "Escuela de Musica", 100),
+        ("Heredia", "San Pablo", "Banda estudiantil MAVISA", 150),
+        ("Heredia", "Santa Barbara", "Banda Municipal de Santa Bárbara", 50),
+        ("Heredia", "Sarapiqui", "Banda Escuela Piano de Sarapiqui", 25),
+        ("Heredia", "Sarapiqui", "Banda Escuela de Sarapiqui", 100),
+
+        # Institucion
+        ("Institucion", "Vice Paz", "Centro Civico por la Paz", 25),
+
+        # Limón
+        ("Limón", "Limon", "Kawe Calipso Youth", 30),
+        ("Limón", "Matina", "Banda Municipal d Matina", 45),
+        ("Limón", "Pococi", "Banda Escuela Municipal de Pococi", 100),
+        ("Limón", "Pococi", "Banda Cospnli de for NPA Pococi", 100),
+        ("Limón", "Siquirres", "Banda Escuela for Siqui de Siquirres", 50),
+
+        # Puntarenas
+        ("Puntarenas", "Cobano", "Banda Escuela for CMD C de Cóbano", 75),
+        ("Puntarenas", "Coto Brus", "Banda Municipal de Coto Brus", 75),
+        ("Puntarenas", "Coto Brus", "Colideportivo de Brus", 50),
+        ("Puntarenas", "Puntarenas", "Banda de Puntarenas Barranca", 150),
+        ("Puntarenas", "Quepos", "Banda Escuela for Munic de Quepos", 120),
+
+        # San José
+        ("San José", "Acosta", "Banda Escuela Instrumen de Acosta", 50),
+        ("San José", "Aserri", "Banda Escuela for Aserr de Aserri", 50),
+        ("San José", "Desamparados", "Banda Municipal de Desamparados", 195),
+        ("San José", "Desamparados", "Banda Municipal de Desamparados", 0),
+        ("San José", "Desamparados", "Banda Escuela de Desamparados", 75),
+        ("San José", "Dota", "Banda Escuela for Dota", 100),
+        ("San José", "Montes de Oca", "Banda Estudiantil Liceo Anastasio Alfaro", 100),
+        ("San José", "Montes de Oca", "Banda Estudiantil Liceo Anastasio Alfaro", 0),
+        ("San José", "Puriscal", "Banda Municipal de Puriscal", 130),
+        ("San José", "San José", "Banda Municipal de San José", 200),
+        ("San José", "Goicoechea", "Banda de Marcha de Heredia", 50),
+        ("San José", "Santa Ana", "Banda Cantonal Municipal de Santa Ana", 115),
+        ("San José", "Santa Ana", "EMAI", 100),
+        ("San José", "Tarrazu", "Banda Escuela Municipal de Tarrazu", 30),
+        ("San José", "Turrubares", "Banda Escuela Municipal de Turrubares", 25),
+    ]
+
+    # =========================
+    # BUILD DF BANDAS
+    # =========================
+    def build_bandas_df() -> pd.DataFrame:
+        rows = []
+        for prov, canton, banda, ben in BANDAS_RAW:
+            prov_n = normalize_prov_bandas(prov)
+            canton_n = normalize_canton_bandas(canton)
+
+            lat = CANTON_COORDS.get(canton_n, (None, None))[0]
+            lon = CANTON_COORDS.get(canton_n, (None, None))[1]
+
+            rows.append({
+                "provincia": prov_n,
+                "canton": canton_n,
+                "banda": clean_txt(banda),
+                "beneficiarios": ben,
+                "lat": lat,
+                "lon": lon
+            })
+        df = pd.DataFrame(rows)
+
+        # numérico (para sumas); None→NaN
+        df["beneficiarios_num"] = pd.to_numeric(df["beneficiarios"], errors="coerce")
+        return df
+
+    bandas = build_bandas_df()
+
+    # =========================
+    # HEADER (misma línea visual)
+    # =========================
+    st.markdown("<div class='title'>Bandas / Beneficiarios</div>", unsafe_allow_html=True)
+    st.markdown("<div class='subtitle'>Mapa satelital ESRI, puntos por cantón y total de beneficiarios por provincia.</div>", unsafe_allow_html=True)
+
+    # =========================
+    # FILTROS (Bandas) — en sidebar también
+    # =========================
+    with st.sidebar:
+        st.header("Filtros (Bandas)")
+
+        prov_b = sorted(bandas["provincia"].dropna().unique().tolist())
+        cant_b = sorted(bandas["canton"].dropna().unique().tolist())
+        banda_b = sorted(bandas["banda"].dropna().unique().tolist())
+
+        prov_sel_b = st.multiselect("Provincia (Bandas)", prov_b, default=[])
+        cant_sel_b = st.multiselect("Cantón (Bandas)", cant_b, default=[])
+        banda_sel_b = st.multiselect("Banda/Club", banda_b, default=[])
+
+    fb = bandas.copy()
+    if prov_sel_b:
+        fb = fb[fb["provincia"].isin(prov_sel_b)]
+    if cant_sel_b:
+        fb = fb[fb["canton"].isin(cant_sel_b)]
+    if banda_sel_b:
+        fb = fb[fb["banda"].isin(banda_sel_b)]
+
+    # =========================
+    # KPI (mismo estilo pero enfocado a Bandas)
+    # =========================
+    cantones_b = fb["canton"].nunique()
+    bandas_unicas_b = fb["banda"].nunique()
+    total_benef = float(fb["beneficiarios_num"].sum(skipna=True))
+
+    st.markdown(
+        f"""
+        <div class="kpi-grid">
+          <div class="kpi kpi-cantones">
+            <div class="kpi-label">Cantones (Bandas)</div>
+            <div class="kpi-value">{cantones_b:,}</div>
+            <div class="kpi-sub">Total según filtros</div>
+          </div>
+          <div class="kpi kpi-estructuras">
+            <div class="kpi-label">Beneficiarios</div>
+            <div class="kpi-value">{int(total_benef):,}</div>
+            <div class="kpi-sub">Suma (solo valores con número)</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True
     )
 
-    st.dataframe(
-        tabla_unificada[["provincia", "canton", "estructuras"]],
-        use_container_width=True,
-        height=360,
-        hide_index=True
+    st.markdown("<hr/>", unsafe_allow_html=True)
+
+    # =========================
+    # MAP BUILDER (Bandas)
+    # =========================
+    def render_map_bandas(df_filtered: pd.DataFrame, height_px: int):
+        fm = df_filtered.dropna(subset=["lat", "lon"]).copy()
+        if fm.empty:
+            st.warning("No hay puntos con coordenadas para mostrar.")
+            return
+
+        grp = (
+            fm.groupby(["provincia", "canton", "lat", "lon"])
+            .agg(
+                beneficiarios=("beneficiarios_num", lambda s: float(pd.to_numeric(s, errors="coerce").sum(skipna=True))),
+                bandas=("banda", lambda s: sorted(set([clean_txt(x) for x in s if clean_txt(x)])))
+            )
+            .reset_index()
+        )
+
+        center_lat = float(grp["lat"].mean())
+        center_lon = float(grp["lon"].mean())
+
+        m = folium.Map(location=[center_lat, center_lon], zoom_start=8, control_scale=True, tiles=None)
+
+        folium.TileLayer(
+            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            attr="Esri, Maxar, Earthstar Geographics, CNES/Airbus DS, USDA, USGS",
+            name="ESRI Satélite",
+            overlay=False,
+            control=True
+        ).add_to(m)
+
+        folium.TileLayer(
+            tiles="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+            attr="Esri",
+            name="Límites y lugares",
+            overlay=True,
+            control=True,
+            opacity=0.95
+        ).add_to(m)
+
+        folium.LayerControl(collapsed=True).add_to(m)
+
+        for _, r in grp.iterrows():
+            provincia = r["provincia"]
+            canton = r["canton"]
+            beneficiarios = int(r["beneficiarios"]) if pd.notna(r["beneficiarios"]) else 0
+            bandas_list = r["bandas"]
+
+            colors = PROV_COLORS.get(provincia, {"stroke": "#111827", "fill": "#9ca3af"})
+
+            html = f"""
+            <div style="font-family: Arial; font-size: 13px; line-height: 1.25;">
+              <div style="font-size: 14px;"><b>{canton}</b></div>
+              <div><b>Provincia:</b> {provincia}</div>
+              <div><b>Beneficiarios:</b> {beneficiarios:,}</div>
+              <div><b>Bandas/Clubes:</b> {len(bandas_list)}</div>
+              <div style="margin-top:6px;"><b>Listado:</b></div>
+              <ul style="margin: 6px 0 0 18px; padding: 0;">
+                {''.join([f'<li>{b}</li>' for b in bandas_list])}
+              </ul>
+            </div>
+            """
+            popup = folium.Popup(html, max_width=440)
+            tooltip = f"{canton} ({provincia}) | {beneficiarios:,} beneficiarios"
+
+            # radio según beneficiarios
+            radius = 7 + min(18, beneficiarios / 25 if beneficiarios else 6)
+
+            folium.CircleMarker(
+                location=[float(r["lat"]), float(r["lon"])],
+                radius=radius,
+                weight=2,
+                color=colors["stroke"],
+                fill=True,
+                fill_color=colors["fill"],
+                fill_opacity=0.60,
+                tooltip=tooltip,
+                popup=popup
+            ).add_to(m)
+
+        st.markdown("<div class='mapwrap'>", unsafe_allow_html=True)
+        st_folium(m, use_container_width=True, height=height_px)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # =========================
+    # FULLSCREEN MODE (Bandas)
+    # =========================
+    if st.session_state["map_fullscreen_bandas"]:
+        st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
+        if st.button("⬅️ Salir de pantalla completa (Bandas)"):
+            st.session_state["map_fullscreen_bandas"] = False
+            st.rerun()
+        st.markdown("<span class='caption'>Modo pantalla completa: el mapa ocupa casi toda la pantalla.</span>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        render_map_bandas(fb, height_px=920)
+        st.stop()
+
+    # =========================
+    # VISTA NORMAL (Bandas)
+    # =========================
+    left2, right2 = st.columns([1.05, 0.95], gap="large")
+
+    with left2:
+        st.markdown("<div class='panel'>", unsafe_allow_html=True)
+        st.subheader("Beneficiarios por provincia")
+
+        prov_sum = (
+            fb.groupby("provincia")["beneficiarios_num"]
+            .sum(min_count=1)
+            .reset_index(name="beneficiarios")
+            .sort_values("beneficiarios", ascending=False)
+        )
+        prov_sum["beneficiarios"] = prov_sum["beneficiarios"].fillna(0)
+
+        fig_prov = px.bar(prov_sum, x="provincia", y="beneficiarios")
+        fig_prov.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(fig_prov, use_container_width=True)
+
+        st.subheader("Tabla unificada (provincia, cantón, beneficiarios)")
+
+        tabla_bandas = (
+            fb.groupby(["provincia", "canton"])
+            .agg(
+                beneficiarios=("beneficiarios_num", lambda s: float(pd.to_numeric(s, errors="coerce").sum(skipna=True))),
+                bandas=("banda", lambda s: ", ".join(sorted(set([clean_txt(x) for x in s if clean_txt(x)]))))
+            )
+            .reset_index()
+            .sort_values(["provincia", "canton"])
+        )
+        tabla_bandas["beneficiarios"] = tabla_bandas["beneficiarios"].fillna(0).astype(int)
+
+        st.dataframe(
+            tabla_bandas[["provincia", "canton", "beneficiarios", "bandas"]],
+            use_container_width=True,
+            height=360,
+            hide_index=True
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with right2:
+        st.markdown("<div class='panel'>", unsafe_allow_html=True)
+        st.subheader("Mapa satelital (ESRI) — Bandas por cantón")
+
+        st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
+        if st.button("⛶ Ver mapa en pantalla completa (Bandas)"):
+            st.session_state["map_fullscreen_bandas"] = True
+            st.rerun()
+        st.markdown("<span class='caption'>Al tocar un punto: cantón + beneficiarios + listado de bandas.</span>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        render_map_bandas(fb, height_px=820)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<hr/>", unsafe_allow_html=True)
+
+    # =========================
+    # DESCARGA (Bandas)
+    # =========================
+    csv_bandas = fb.copy()
+    csv_bandas.drop(columns=["beneficiarios_num"], inplace=True, errors="ignore")
+    csv_bytes_b = csv_bandas.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        "⬇️ Descargar datos filtrados (Bandas) (CSV)",
+        data=csv_bytes_b,
+        file_name="bandas_beneficiarios_filtrado.csv",
+        mime="text/csv"
     )
-    st.markdown("</div>", unsafe_allow_html=True)
 
-with right:
-    st.markdown("<div class='panel'>", unsafe_allow_html=True)
-    st.subheader("Mapa satelital (ESRI) — puntos por cantón")
+    st.markdown(
+        f"<div class='caption'>Resumen: <b>{bandas_unicas_b}</b> bandas/clubes en <b>{cantones_b}</b> cantones. Beneficiarios (sumados): <b>{int(total_benef):,}</b>.</div>",
+        unsafe_allow_html=True
+    )
 
-    st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
-    if st.button("⛶ Ver mapa en pantalla completa"):
-        st.session_state["map_fullscreen"] = True
-        st.rerun()
-    st.markdown("<span class='caption'>Abre el mapa ocupando casi toda la pantalla.</span>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    render_map(f, height_px=820)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-st.markdown("<hr/>", unsafe_allow_html=True)
-
-# =========================
-# DESCARGA + RESUMEN (IGUAL)
-# =========================
-csv_bytes = f.to_csv(index=False).encode("utf-8")
-st.download_button(
-    "⬇️ Descargar datos filtrados (CSV)",
-    data=csv_bytes,
-    file_name="cantones_estructuras_normalizado.csv",
-    mime="text/csv"
-)
-
-st.markdown(
-    f"<div class='caption'>Resumen: <b>{estructuras_unicas}</b> estructuras únicas en <b>{cantones_unicos}</b> cantones (según filtros).</div>",
-    unsafe_allow_html=True
-)
