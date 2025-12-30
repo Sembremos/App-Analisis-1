@@ -61,7 +61,6 @@ st.markdown(
 
 # =========================
 # FIX VISIBILIDAD DE TABS (NUEVO)
-# - Evita que el CSS/títulos "tapen" la barra de pestañas
 # =========================
 st.markdown(
     """
@@ -82,12 +81,25 @@ st.markdown(
 )
 
 # =========================
-# SESSION STATE (IGUAL + 2 fullscreen)
+# SESSION STATE (IGUAL + 3 fullscreen)
 # =========================
 if "map_fullscreen" not in st.session_state:
     st.session_state["map_fullscreen"] = False
 if "map_fullscreen_bandas" not in st.session_state:
     st.session_state["map_fullscreen_bandas"] = False
+if "map_fullscreen_cpc" not in st.session_state:
+    st.session_state["map_fullscreen_cpc"] = False
+
+# =========================
+# ORDEN FIJO DE PROVINCIAS (NUEVO SOLO PARA TABLAS)
+# =========================
+PROV_ORDER = ["San Jose", "Alajuela", "Cartago", "Heredia", "Guanacaste", "Puntarenas", "Limon"]
+PROV_RANK = {p: i for i, p in enumerate(PROV_ORDER)}
+
+def sort_by_prov_order(df: pd.DataFrame, prov_col: str = "provincia") -> pd.DataFrame:
+    df = df.copy()
+    df["_prov_rank"] = df[prov_col].map(lambda x: PROV_RANK.get(x, 999))
+    return df.sort_values(["_prov_rank", prov_col], ascending=[True, True]).drop(columns=["_prov_rank"])
 
 # =========================
 # COLORES POR PROVINCIA (IGUAL)
@@ -103,8 +115,7 @@ PROV_COLORS = {
 }
 
 # =========================
-# NORMALIZACIÓN DE ESTRUCTURAS (IGUAL)
-# - "Diablo" y "Diablo - Alejandro Arias Monge" = MISMA estructura
+# NORMALIZACIÓN (IGUAL)
 # =========================
 def clean_txt(x: str) -> str:
     if pd.isna(x):
@@ -121,6 +132,93 @@ def normalize_estructura(name: str) -> str:
     if low.startswith("diablo"):
         return "Diablo - Alejandro Arias Monge"
     return name
+
+# =========================
+# NORMALIZACIÓN EXTRA (Bandas + CPC) (NUEVO, NO ROMPE)
+# =========================
+def _strip_accents(s: str) -> str:
+    if s is None:
+        return ""
+    s = str(s)
+    repl = (
+        ("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"),
+        ("Á", "A"), ("É", "E"), ("Í", "I"), ("Ó", "O"), ("Ú", "U"),
+        ("ñ", "n"), ("Ñ", "N")
+    )
+    for a, b in repl:
+        s = s.replace(a, b)
+    return s
+
+def normalize_prov_generic(p: str) -> str:
+    p = clean_txt(p)
+    p = _strip_accents(p)
+    p = p.replace(".", "")
+    p = p.replace("  ", " ")
+    p_low = p.lower()
+
+    if p_low in ["san jose", "san josé"]:
+        return "San Jose"
+    if p_low in ["limon", "limón"]:
+        return "Limon"
+    if p_low == "puntarenas":
+        return "Puntarenas"
+    if p_low == "guanacaste":
+        return "Guanacaste"
+    if p_low == "heredia":
+        return "Heredia"
+    if p_low == "cartago":
+        return "Cartago"
+    if p_low == "alajuela":
+        return "Alajuela"
+    return p
+
+def normalize_canton_generic(c: str) -> str:
+    c = clean_txt(c)
+    c = _strip_accents(c)
+    c = c.replace("  ", " ")
+
+    # ajustes comunes
+    if c.lower() == "peñas blancas":
+        return "Penas Blancas"
+    if c.lower() == "cóbano":
+        return "Cobano"
+    if c.lower() == "río cuarto":
+        return "Rio Cuarto"
+    if c.lower() == "san josé":
+        return "San Jose"
+    if c.lower() == "turrialba":
+        return "Turrialba"
+    if c.lower() == "tucurrique":
+        return "Tucurrique"
+    if c.lower() == "tarrazú":
+        return "Tarrazu"
+    if c.lower() == "aserrí":
+        return "Aserri"
+    if c.lower() == "sarapiquí":
+        return "Sarapiqui"
+    if c.lower() == "santa bárbara":
+        return "Santa Barbara"
+    return c
+
+def split_canton_base(x: str) -> str:
+    """
+    Ej: 'San José/ Pavas' => 'San José'
+        'Alajuela / Los Cocos' => 'Alajuela'
+        'La Cruz Santa Cecilia' => 'La Cruz' (heurística)
+    """
+    x = clean_txt(x)
+    if not x:
+        return ""
+    # si viene con /, el cantón base suele estar antes del primer /
+    if "/" in x:
+        base = x.split("/")[0].strip()
+        return base
+    # si viene con " / " (ya cubierto por /)
+    # si viene "La Cruz Santa Cecilia", asumimos cantón "La Cruz"
+    low = _strip_accents(x).lower()
+    if low.startswith("la cruz"):
+        return "La Cruz"
+    return x
 
 # =========================
 # DATOS (MATRIZ ANCHA) — IGUAL
@@ -228,7 +326,6 @@ RAW_BY_PROV = {
         ("Guacimo",   ["La H", "Diablo - Alejandro Arias Monge", "Los Morenco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "Pechuga", "", ""]),
     ],
 }
-
 # =========================
 # COORDENADAS (centroides cantonales aprox. para mapear ya)
 # =========================
@@ -331,7 +428,7 @@ CANTON_COORDS = {
     "Matina": (10.0800, -83.3000),
     "Guacimo": (10.2100, -83.6800),
 
-    # ✅ extra para Bandas (no rompe nada)
+    # extra
     "Penas Blancas": (10.9780, -84.7370),
     "Cobano": (9.6840, -85.0960),
     "Quepos": (9.4310, -84.1620),
@@ -339,6 +436,14 @@ CANTON_COORDS = {
     "Cervantes": (9.8940, -83.8050),
     "Tucurrique": (9.8600, -83.7220),
 }
+
+# =========================
+# MAPA DE CANTON -> PROVINCIA (NUEVO, SOLO PARA ASIGNAR PROVINCIA EN CPC)
+# =========================
+CANTON_TO_PROV = {}
+for _p, _items in RAW_BY_PROV.items():
+    for _c, _ in _items:
+        CANTON_TO_PROV[normalize_canton_generic(_c)] = _p
 
 # =========================
 # HELPERS (IGUAL)
@@ -380,9 +485,11 @@ wide = build_wide_df()
 long = add_coords(normalize_long(wide))
 
 # =========================
-# ✅ TABS (YA SE VEN — FIX ARRIBA)
+# ✅ TABS (3 PESTAÑAS)
 # =========================
-tab_estructuras, tab_bandas = st.tabs(["🛰️ Cantones y estructuras", "🎶 Bandas / Beneficiarios"])
+tab_estructuras, tab_bandas, tab_cpc = st.tabs(
+    ["🛰️ Cantones y estructuras", "🎶 Bandas / Beneficiarios", "🏘️ Centros Preventivos Comunitarios"]
+)
 
 # =============================================================================
 # ============================== TAB 1 (TU APP) =================================
@@ -393,15 +500,14 @@ with tab_estructuras:
     st.markdown("<div class='subtitle'>Mapa satelital ESRI, puntos por cantón y detalle de estructuras por ubicación.</div>", unsafe_allow_html=True)
 
     # =========================
-    # FILTROS (TAB 1) — SEPARADOS (ya no se mezclan con TAB 2)
-    # (Se ponen dentro del TAB para que cada pestaña tenga lo suyo)
+    # FILTROS (TAB 1) — SEPARADOS
     # =========================
     st.markdown("<div class='panel'>", unsafe_allow_html=True)
     st.subheader("Filtros (Estructuras)")
 
     fcol1, fcol2, fcol3 = st.columns([1, 1, 1], gap="medium")
 
-    provincias = sorted(long["provincia"].unique().tolist())
+    provincias = sorted(long["provincia"].unique().tolist(), key=lambda x: PROV_RANK.get(x, 999))
     cantones = sorted(long["canton"].unique().tolist())
     estructuras = sorted(long["estructura"].unique().tolist())
 
@@ -425,6 +531,9 @@ with tab_estructuras:
     cantones_unicos = f["canton"].nunique()
     estructuras_unicas = f["estructura"].nunique()
 
+    # =========================
+    # KPI (IGUAL)
+    # =========================
     st.markdown(
         f"""
         <div class="kpi-grid">
@@ -445,6 +554,9 @@ with tab_estructuras:
 
     st.markdown("<hr/>", unsafe_allow_html=True)
 
+    # =========================
+    # MAP BUILDER (IGUAL)
+    # =========================
     def render_map(df_filtered: pd.DataFrame, height_px: int):
         fm = df_filtered.dropna(subset=["lat", "lon"]).copy()
         if fm.empty:
@@ -524,6 +636,9 @@ with tab_estructuras:
         st_folium(m, use_container_width=True, height=height_px)
         st.markdown("</div>", unsafe_allow_html=True)
 
+    # =========================
+    # FULLSCREEN MODE (IGUAL)
+    # =========================
     if st.session_state["map_fullscreen"]:
         st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
         if st.button("⬅️ Salir de pantalla completa", key="tab1_exit_full"):
@@ -535,6 +650,9 @@ with tab_estructuras:
         render_map(f, height_px=920)
         st.stop()
 
+    # =========================
+    # VISTA NORMAL (IGUAL)
+    # =========================
     left, right = st.columns([1.05, 0.95], gap="large")
 
     with left:
@@ -559,7 +677,11 @@ with tab_estructuras:
             .apply(lambda s: ", ".join(sorted(set(s))))
             .reset_index()
             .rename(columns={"estructura": "estructuras"})
-            .sort_values(["provincia", "canton"])
+        )
+
+        # ✅ ORDEN DE PROVINCIAS (NUEVO)
+        tabla_unificada = sort_by_prov_order(tabla_unificada, "provincia").sort_values(
+            ["provincia", "canton"], key=lambda col: col if col.name != "provincia" else col.map(lambda x: PROV_RANK.get(x, 999))
         )
 
         st.dataframe(
@@ -599,69 +721,10 @@ with tab_estructuras:
         f"<div class='caption'>Resumen: <b>{estructuras_unicas}</b> estructuras únicas en <b>{cantones_unicos}</b> cantones (según filtros).</div>",
         unsafe_allow_html=True
     )
-
 # =============================================================================
 # ============================== TAB 2 (BANDAS) =================================
 # =============================================================================
 with tab_bandas:
-
-    # =========================
-    # NORMALIZACIÓN PARA PROVINCIAS/CANTONES (Bandas)
-    # =========================
-    def _strip_accents(s: str) -> str:
-        if s is None:
-            return ""
-        s = str(s)
-        repl = (
-            ("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"),
-            ("Á", "A"), ("É", "E"), ("Í", "I"), ("Ó", "O"), ("Ú", "U"),
-            ("ñ", "n"), ("Ñ", "N")
-        )
-        for a, b in repl:
-            s = s.replace(a, b)
-        return s
-
-    def normalize_prov_bandas(p: str) -> str:
-        p = clean_txt(p)
-        p = _strip_accents(p)
-        p = p.replace(".", "")
-        p = p.replace("  ", " ")
-        p_low = p.lower()
-
-        if p_low in ["san jose", "san josé"]:
-            return "San Jose"
-        if p_low in ["limon", "limón"]:
-            return "Limon"
-        if p_low == "puntarenas":
-            return "Puntarenas"
-        if p_low == "guanacaste":
-            return "Guanacaste"
-        if p_low == "heredia":
-            return "Heredia"
-        if p_low == "cartago":
-            return "Cartago"
-        if p_low == "alajuela":
-            return "Alajuela"
-        return p
-
-    def normalize_canton_bandas(c: str) -> str:
-        c = clean_txt(c)
-        c = _strip_accents(c)
-        c = c.replace("  ", " ")
-
-        if c.lower() == "peñas blancas":
-            return "Penas Blancas"
-        if c.lower() == "cóbano":
-            return "Cobano"
-        if c.lower() == "río cuarto":
-            return "Rio Cuarto"
-        if c.lower() == "san josé":
-            return "San Jose"
-        if c.lower() == "turrialba":
-            return "Turrialba"
-        if c.lower() == "tucurrique":
-            return "Tucurrique"
-        return c
 
     # =========================
     # DATOS DE BANDAS (EN CÓDIGO)
@@ -711,7 +774,9 @@ with tab_bandas:
         ("Heredia", "Santa Bárbara", "Banda Municipal de Santa Bárbara", 50),
         ("Heredia", "Sarapiquí", "Banda Escuela Piano de Sarapiqui", 25),
         ("Heredia", "Sarapiquí", "Banda Escuela de Sarapiqui", 100),
-        ("Heredia", "Vice Paz", "Centro Civico por la Paz", 25),
+
+        # Institución (sin coords)
+        ("Institucion", "Vice Paz", "Centro Civico por la Paz", 25),
 
         # Limón
         ("Limón", "Limón", "Kawe Calipso Youth", 30),
@@ -748,8 +813,8 @@ with tab_bandas:
     def build_bandas_df() -> pd.DataFrame:
         rows = []
         for prov, canton, banda, ben in BANDAS_RAW:
-            prov_n = normalize_prov_bandas(prov)
-            canton_n = normalize_canton_bandas(canton)
+            prov_n = normalize_prov_generic(prov)
+            canton_n = normalize_canton_generic(canton)
 
             lat = CANTON_COORDS.get(canton_n, (None, None))[0]
             lon = CANTON_COORDS.get(canton_n, (None, None))[1]
@@ -772,14 +837,14 @@ with tab_bandas:
     st.markdown("<div class='subtitle'>Mapa satelital ESRI, puntos por cantón y total de beneficiarios por provincia.</div>", unsafe_allow_html=True)
 
     # =========================
-    # FILTROS (TAB 2) — SEPARADOS (solo Bandas)
+    # FILTROS (TAB 2) — SEPARADOS
     # =========================
     st.markdown("<div class='panel'>", unsafe_allow_html=True)
     st.subheader("Filtros (Bandas)")
 
     bcol1, bcol2, bcol3 = st.columns([1, 1, 1], gap="medium")
 
-    prov_b = sorted(bandas["provincia"].dropna().unique().tolist())
+    prov_b = sorted(bandas["provincia"].dropna().unique().tolist(), key=lambda x: PROV_RANK.get(x, 999))
     cant_b = sorted(bandas["canton"].dropna().unique().tolist())
     banda_b = sorted(bandas["banda"].dropna().unique().tolist())
 
@@ -925,9 +990,10 @@ with tab_bandas:
             fb.groupby("provincia")["beneficiarios_num"]
             .sum(min_count=1)
             .reset_index(name="beneficiarios")
-            .sort_values("beneficiarios", ascending=False)
         )
         prov_sum["beneficiarios"] = prov_sum["beneficiarios"].fillna(0)
+        prov_sum["_rank"] = prov_sum["provincia"].map(lambda x: PROV_RANK.get(x, 999))
+        prov_sum = prov_sum.sort_values(["_rank", "provincia"]).drop(columns=["_rank"])
 
         fig_prov = px.bar(prov_sum, x="provincia", y="beneficiarios")
         fig_prov.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10))
@@ -942,9 +1008,12 @@ with tab_bandas:
                 bandas=("banda", lambda s: ", ".join(sorted(set([clean_txt(x) for x in s if clean_txt(x)]))))
             )
             .reset_index()
-            .sort_values(["provincia", "canton"])
         )
         tabla_bandas["beneficiarios"] = tabla_bandas["beneficiarios"].fillna(0).astype(int)
+
+        # ✅ ORDEN DE PROVINCIAS (NUEVO)
+        tabla_bandas["_rank"] = tabla_bandas["provincia"].map(lambda x: PROV_RANK.get(x, 999))
+        tabla_bandas = tabla_bandas.sort_values(["_rank", "provincia", "canton"]).drop(columns=["_rank"])
 
         st.dataframe(
             tabla_bandas[["provincia", "canton", "beneficiarios", "bandas"]],
@@ -987,4 +1056,315 @@ with tab_bandas:
         unsafe_allow_html=True
     )
 
+# =============================================================================
+# ============================== TAB 3 (CPC) ===================================
+# =============================================================================
+with tab_cpc:
+
+    # =========================
+    # DATOS CPC (EN CÓDIGO) — SIN PROVINCIA (SE ASIGNA)
+    # =========================
+    CPC_RAW = [
+        (40, "Alajuela / Vistas de Santamaria", "Centro Preventivo Comunitario"),
+        (25, "Alajuela / Los Cocos", "Community Prevention Center"),
+        (60, "Alajuelita / San Felipe", "Safe Space"),
+        (40, "Alajuelita / Centro", "Casa de Creación Juvenil"),
+        (40, "Corredores/ Sabalito", "Safe Space"),
+        (40, "Coto Brus", "Safe Space"),
+        (100, "Curridabat", "Human Center of Development La Cometa"),
+        (50, "Desamparados", "Civic Center of Peace & Desamparados Municipality"),
+        (350, "Desamparados/ Los Guido", "Safe Space"),
+        (60, "Guatuso", "Safe Space"),
+        (100, "Heredia", "Community Prevention Center"),
+        (100, "La Cruz Santa Cecilia", "Safe Space"),
+        (80, "La Cruz/ Centro", "Safe Space"),
+        (30, "Limon/ Pueblo Nuevo", "Community Prevention Center: Youth Center"),
+        (150, "Limon/ Cieneguita", "Community Prevention Center/ Safe Space/ Surf Boxing"),
+        (15, "Limón/ Limoncito", "Community Prevention Center/ Safe Space"),
+
+        (30, "Limón / Valle de la Estrella", "Colectivo deportivo Valle de la Estrella"),
+        (100, "Limon/ Cocos", "Asoc de Futbol Club Atlético Limonense"),
+        (150, "Los Chiles / Muelle", "Centro Preventivo Comunitario"),
+        (100, "Los Chiles / La Virgen", "Safe Space"),
+        (50, "Matina/ Estrada", "Safe Space"),
+        (55, "Matina / Luzon", "Safe Space"),
+        (75, "Montes de Oca", "Community Prevention Center /Circo Social de Sinaí"),
+        (60, "Mora", "Casa de la Juventud/Club House"),
+        (45, "Osa/ Bahia Ballena", "Centro Preventivo Comunitario"),
+        (20, "Pococi/ la Sole", "ADI Sole, DINADECO, UNICEF, PANI, INL"),
+        (100, "Puntarenas/ Barranca", "Centro Preventivo Comunitario ONG Barranca Sport Club"),
+        (15, "Puntarenas/ Chacarita", "Safe Space"),
+        (50, "Puntarenas/ Fray Casiano", "Safe Space"),
+        (20, "Quepos /Pies Mojados", "Safe Space"),
+        (70, "San Carlos", "Civic Center of Peace"),
+        (40, "San José/ Pavas", "Safe Space"),
+        (30, "San José / Hatillo", "Safe Space"),
+        (150, "San José / Carpio", "Safe Space"),
+
+        (25, "San Ramón", "Safe Space"),
+        (100, "Santa Ana", "Casita de Escucha Corazón de Jesús"),
+        (100, "Santa Ana", "Casita de Escucha El Triunfo"),
+        (40, "Sarapiquí / llanuras de Gaspal", "Safe Space"),
+        (40, "Sarapiquí / puerto Viejo", "Safe Space"),
+        (15, "Siquirres/ 3 Cercas", "Safe Space"),
+        (25, "Turrialba", "Community Prevention Center"),
+        (52, "Turrubares", "Safe Space"),
+        (20, "Upala/ Mexico", "Safe Space"),
+        (30, "Upala/ La Real", "Safe Space"),
+    ]
+
+    def build_cpc_df() -> pd.DataFrame:
+        rows = []
+        for ben, canton_raw, centro in CPC_RAW:
+            base = split_canton_base(canton_raw)
+            canton_base = normalize_canton_generic(base)
+
+            prov = CANTON_TO_PROV.get(canton_base, "")
+            prov = normalize_prov_generic(prov) if prov else ""
+
+            # si no se pudo inferir, lo dejamos en blanco (pero casi todos están en el mapeo)
+            if not prov:
+                prov = "Sin provincia"
+
+            lat = CANTON_COORDS.get(canton_base, (None, None))[0]
+            lon = CANTON_COORDS.get(canton_base, (None, None))[1]
+
+            rows.append({
+                "provincia": prov,
+                "canton": canton_base,
+                "canton_detalle": clean_txt(canton_raw),
+                "centro": clean_txt(centro),
+                "beneficiarios": ben,
+                "lat": lat,
+                "lon": lon
+            })
+
+        df = pd.DataFrame(rows)
+        df["beneficiarios_num"] = pd.to_numeric(df["beneficiarios"], errors="coerce")
+        return df
+
+    cpc = build_cpc_df()
+
+    st.markdown("<div class='title'>Centros Preventivos Comunitarios</div>", unsafe_allow_html=True)
+    st.markdown("<div class='subtitle'>Mapa satelital ESRI, puntos por cantón y total de beneficiarios por provincia.</div>", unsafe_allow_html=True)
+
+    # =========================
+    # FILTROS (TAB 3) — SEPARADOS (provincia, canton, centro)
+    # =========================
+    st.markdown("<div class='panel'>", unsafe_allow_html=True)
+    st.subheader("Filtros (CPC)")
+
+    ccol1, ccol2, ccol3 = st.columns([1, 1, 1], gap="medium")
+
+    prov_c = sorted(cpc["provincia"].dropna().unique().tolist(), key=lambda x: PROV_RANK.get(x, 999) if x in PROV_RANK else 999)
+    cant_c = sorted(cpc["canton"].dropna().unique().tolist())
+    centro_c = sorted(cpc["centro"].dropna().unique().tolist())
+
+    with ccol1:
+        prov_sel_c = st.multiselect("Provincia (CPC)", prov_c, default=[], key="tab3_prov")
+    with ccol2:
+        cant_sel_c = st.multiselect("Cantón (CPC)", cant_c, default=[], key="tab3_cant")
+    with ccol3:
+        centro_sel_c = st.multiselect("Centro (CPC)", centro_c, default=[], key="tab3_centro")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    fc = cpc.copy()
+    if prov_sel_c:
+        fc = fc[fc["provincia"].isin(prov_sel_c)]
+    if cant_sel_c:
+        fc = fc[fc["canton"].isin(cant_sel_c)]
+    if centro_sel_c:
+        fc = fc[fc["centro"].isin(centro_sel_c)]
+
+    cantones_c = fc["canton"].nunique()
+    centros_unicos_c = fc["centro"].nunique()
+    total_benef_c = float(fc["beneficiarios_num"].sum(skipna=True))
+
+    st.markdown(
+        f"""
+        <div class="kpi-grid">
+          <div class="kpi kpi-cantones">
+            <div class="kpi-label">Cantones (CPC)</div>
+            <div class="kpi-value">{cantones_c:,}</div>
+            <div class="kpi-sub">Total según filtros</div>
+          </div>
+          <div class="kpi kpi-estructuras">
+            <div class="kpi-label">Beneficiarios</div>
+            <div class="kpi-value">{int(total_benef_c):,}</div>
+            <div class="kpi-sub">Suma total</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.markdown("<hr/>", unsafe_allow_html=True)
+
+    def render_map_cpc(df_filtered: pd.DataFrame, height_px: int):
+        fm = df_filtered.dropna(subset=["lat", "lon"]).copy()
+        if fm.empty:
+            st.warning("No hay puntos con coordenadas para mostrar.")
+            return
+
+        grp = (
+            fm.groupby(["provincia", "canton", "lat", "lon"])
+            .agg(
+                beneficiarios=("beneficiarios_num", lambda s: float(pd.to_numeric(s, errors="coerce").sum(skipna=True))),
+                centros=("centro", lambda s: sorted(set([clean_txt(x) for x in s if clean_txt(x)])))
+            )
+            .reset_index()
+        )
+
+        center_lat = float(grp["lat"].mean())
+        center_lon = float(grp["lon"].mean())
+
+        m = folium.Map(location=[center_lat, center_lon], zoom_start=8, control_scale=True, tiles=None)
+
+        folium.TileLayer(
+            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            attr="Esri, Maxar, Earthstar Geographics, CNES/Airbus DS, USDA, USGS",
+            name="ESRI Satélite",
+            overlay=False,
+            control=True
+        ).add_to(m)
+
+        folium.TileLayer(
+            tiles="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+            attr="Esri",
+            name="Límites y lugares",
+            overlay=True,
+            control=True,
+            opacity=0.95
+        ).add_to(m)
+
+        folium.LayerControl(collapsed=True).add_to(m)
+
+        for _, r in grp.iterrows():
+            provincia = r["provincia"]
+            canton = r["canton"]
+            beneficiarios = int(r["beneficiarios"]) if pd.notna(r["beneficiarios"]) else 0
+            centros_list = r["centros"]
+
+            colors = PROV_COLORS.get(provincia, {"stroke": "#111827", "fill": "#9ca3af"})
+
+            html = f"""
+            <div style="font-family: Arial; font-size: 13px; line-height: 1.25;">
+              <div style="font-size: 14px;"><b>{canton}</b></div>
+              <div><b>Provincia:</b> {provincia}</div>
+              <div><b>Beneficiarios:</b> {beneficiarios:,}</div>
+              <div><b>Centros:</b> {len(centros_list)}</div>
+              <div style="margin-top:6px;"><b>Listado:</b></div>
+              <ul style="margin: 6px 0 0 18px; padding: 0;">
+                {''.join([f'<li>{c}</li>' for c in centros_list])}
+              </ul>
+            </div>
+            """
+            popup = folium.Popup(html, max_width=460)
+            tooltip = f"{canton} ({provincia}) | {beneficiarios:,} beneficiarios"
+
+            radius = 7 + min(18, (beneficiarios / 25) if beneficiarios else 6)
+
+            folium.CircleMarker(
+                location=[float(r["lat"]), float(r["lon"])],
+                radius=radius,
+                weight=2,
+                color=colors["stroke"],
+                fill=True,
+                fill_color=colors["fill"],
+                fill_opacity=0.60,
+                tooltip=tooltip,
+                popup=popup
+            ).add_to(m)
+
+        st.markdown("<div class='mapwrap'>", unsafe_allow_html=True)
+        st_folium(m, use_container_width=True, height=height_px)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    if st.session_state["map_fullscreen_cpc"]:
+        st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
+        if st.button("⬅️ Salir de pantalla completa (CPC)", key="tab3_exit_full"):
+            st.session_state["map_fullscreen_cpc"] = False
+            st.rerun()
+        st.markdown("<span class='caption'>Modo pantalla completa: el mapa ocupa casi toda la pantalla.</span>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        render_map_cpc(fc, height_px=920)
+        st.stop()
+
+    left3, right3 = st.columns([1.05, 0.95], gap="large")
+
+    with left3:
+        st.markdown("<div class='panel'>", unsafe_allow_html=True)
+        st.subheader("Beneficiarios por provincia")
+
+        prov_sum_c = (
+            fc.groupby("provincia")["beneficiarios_num"]
+            .sum(min_count=1)
+            .reset_index(name="beneficiarios")
+        )
+        prov_sum_c["beneficiarios"] = prov_sum_c["beneficiarios"].fillna(0)
+        prov_sum_c["_rank"] = prov_sum_c["provincia"].map(lambda x: PROV_RANK.get(x, 999))
+        prov_sum_c = prov_sum_c.sort_values(["_rank", "provincia"]).drop(columns=["_rank"])
+
+        fig_c = px.bar(prov_sum_c, x="provincia", y="beneficiarios")
+        fig_c.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(fig_c, use_container_width=True)
+
+        st.subheader("Tabla unificada (provincia, cantón, beneficiarios, centros)")
+
+        tabla_cpc = (
+            fc.groupby(["provincia", "canton"])
+            .agg(
+                beneficiarios=("beneficiarios_num", lambda s: float(pd.to_numeric(s, errors="coerce").sum(skipna=True))),
+                centros=("centro", lambda s: ", ".join(sorted(set([clean_txt(x) for x in s if clean_txt(x)]))))
+            )
+            .reset_index()
+        )
+        tabla_cpc["beneficiarios"] = tabla_cpc["beneficiarios"].fillna(0).astype(int)
+
+        # ✅ ORDEN DE PROVINCIAS (NUEVO)
+        tabla_cpc["_rank"] = tabla_cpc["provincia"].map(lambda x: PROV_RANK.get(x, 999))
+        tabla_cpc = tabla_cpc.sort_values(["_rank", "provincia", "canton"]).drop(columns=["_rank"])
+
+        st.dataframe(
+            tabla_cpc[["provincia", "canton", "beneficiarios", "centros"]],
+            use_container_width=True,
+            height=360,
+            hide_index=True
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with right3:
+        st.markdown("<div class='panel'>", unsafe_allow_html=True)
+        st.subheader("Mapa satelital (ESRI) — CPC por cantón")
+
+        st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
+        if st.button("⛶ Ver mapa en pantalla completa (CPC)", key="tab3_full_btn"):
+            st.session_state["map_fullscreen_cpc"] = True
+            st.rerun()
+        st.markdown("<span class='caption'>Al tocar un punto: cantón + beneficiarios + listado de centros.</span>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        render_map_cpc(fc, height_px=820)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<hr/>", unsafe_allow_html=True)
+
+    csv_cpc = fc.copy()
+    csv_cpc.drop(columns=["beneficiarios_num"], inplace=True, errors="ignore")
+    csv_bytes_c = csv_cpc.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        "⬇️ Descargar datos filtrados (CPC) (CSV)",
+        data=csv_bytes_c,
+        file_name="cpc_beneficiarios_filtrado.csv",
+        mime="text/csv",
+        key="tab3_csv"
+    )
+
+    st.markdown(
+        f"<div class='caption'>Resumen: <b>{centros_unicos_c}</b> centros en <b>{cantones_c}</b> cantones. Beneficiarios (sumados): <b>{int(total_benef_c):,}</b>.</div>",
+        unsafe_allow_html=True
+    )
 
