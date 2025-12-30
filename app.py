@@ -774,9 +774,7 @@ with tab_bandas:
         ("Heredia", "Santa Bárbara", "Banda Municipal de Santa Bárbara", 50),
         ("Heredia", "Sarapiquí", "Banda Escuela Piano de Sarapiqui", 25),
         ("Heredia", "Sarapiquí", "Banda Escuela de Sarapiqui", 100),
-
-        # Institución (sin coords)
-        ("Institucion", "Vice Paz", "Centro Civico por la Paz", 25),
+        ("Heredia", "Vice Paz", "Centro Civico por la Paz", 25),
 
         # Limón
         ("Limón", "Limón", "Kawe Calipso Youth", 30),
@@ -1095,7 +1093,6 @@ with tab_cpc:
         (100, "Puntarenas/ Barranca", "Centro Preventivo Comunitario ONG Barranca Sport Club"),
         (15, "Puntarenas/ Chacarita", "Safe Space"),
         (50, "Puntarenas/ Fray Casiano", "Safe Space"),
-        (20, "Quepos /Pies Mojados", "Safe Space"),
         (70, "San Carlos", "Civic Center of Peace"),
         (40, "San José/ Pavas", "Safe Space"),
         (30, "San José / Hatillo", "Safe Space"),
@@ -1367,4 +1364,5 @@ with tab_cpc:
         f"<div class='caption'>Resumen: <b>{centros_unicos_c}</b> centros en <b>{cantones_c}</b> cantones. Beneficiarios (sumados): <b>{int(total_benef_c):,}</b>.</div>",
         unsafe_allow_html=True
     )
+
 
