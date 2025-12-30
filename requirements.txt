@@ -5,6 +5,8 @@ google-auth
 folium
 streamlit-folium
 plotly
+matplotlib
+
 
 
 
