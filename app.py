@@ -60,12 +60,32 @@ st.markdown(
 )
 
 # =========================
-# SESSION STATE (IGUAL)
+# FIX VISIBILIDAD DE TABS (NUEVO)
+# - Evita que el CSS/títulos "tapen" la barra de pestañas
+# =========================
+st.markdown(
+    """
+    <style>
+      div[data-baseweb="tab-list"]{
+        position: relative !important;
+        z-index: 99999 !important;
+        margin-top: 6px !important;
+        margin-bottom: 14px !important;
+      }
+      button[data-baseweb="tab"]{
+        font-weight: 800 !important;
+        font-size: 14px !important;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# =========================
+# SESSION STATE (IGUAL + 2 fullscreen)
 # =========================
 if "map_fullscreen" not in st.session_state:
     st.session_state["map_fullscreen"] = False
-
-# ✅ NUEVO: fullscreen para pestaña Bandas (sin tocar tu estado original)
 if "map_fullscreen_bandas" not in st.session_state:
     st.session_state["map_fullscreen_bandas"] = False
 
@@ -311,12 +331,13 @@ CANTON_COORDS = {
     "Matina": (10.0800, -83.3000),
     "Guacimo": (10.2100, -83.6800),
 
-    # ✅ NUEVOS para Bandas (no afectan tu pestaña actual)
+    # ✅ extra para Bandas (no rompe nada)
     "Penas Blancas": (10.9780, -84.7370),
     "Cobano": (9.6840, -85.0960),
     "Quepos": (9.4310, -84.1620),
-    "Atenas": (9.9800, -84.3820),
-    "Orotina": (9.9100, -84.5220),
+    "Colorado": (10.6000, -85.2000),
+    "Cervantes": (9.8940, -83.8050),
+    "Tucurrique": (9.8600, -83.7220),
 }
 
 # =========================
@@ -359,35 +380,39 @@ wide = build_wide_df()
 long = add_coords(normalize_long(wide))
 
 # =========================
-# ✅ TABS (para agregar nueva pestaña sin tocar tu lógica)
+# ✅ TABS (YA SE VEN — FIX ARRIBA)
 # =========================
 tab_estructuras, tab_bandas = st.tabs(["🛰️ Cantones y estructuras", "🎶 Bandas / Beneficiarios"])
 
 # =============================================================================
-# ============================== TAB 1 (TU APP ACTUAL) =========================
+# ============================== TAB 1 (TU APP) =================================
 # =============================================================================
 with tab_estructuras:
 
-    # =========================
-    # HEADER (IGUAL)
-    # =========================
     st.markdown("<div class='title'>Cantones y estructuras (Prueba 1)</div>", unsafe_allow_html=True)
     st.markdown("<div class='subtitle'>Mapa satelital ESRI, puntos por cantón y detalle de estructuras por ubicación.</div>", unsafe_allow_html=True)
 
     # =========================
-    # FILTROS (provincia + canton + estructura) (IGUAL)
+    # FILTROS (TAB 1) — SEPARADOS (ya no se mezclan con TAB 2)
+    # (Se ponen dentro del TAB para que cada pestaña tenga lo suyo)
     # =========================
-    with st.sidebar:
-        st.header("Filtros")
+    st.markdown("<div class='panel'>", unsafe_allow_html=True)
+    st.subheader("Filtros (Estructuras)")
 
-        provincias = sorted(long["provincia"].unique().tolist())
-        prov_sel = st.multiselect("Provincia", provincias, default=[])
+    fcol1, fcol2, fcol3 = st.columns([1, 1, 1], gap="medium")
 
-        cantones = sorted(long["canton"].unique().tolist())
-        estructuras = sorted(long["estructura"].unique().tolist())
+    provincias = sorted(long["provincia"].unique().tolist())
+    cantones = sorted(long["canton"].unique().tolist())
+    estructuras = sorted(long["estructura"].unique().tolist())
 
-        cant_sel = st.multiselect("Cantón", cantones, default=[])
-        estr_sel = st.multiselect("Estructura", estructuras, default=[])
+    with fcol1:
+        prov_sel = st.multiselect("Provincia", provincias, default=[], key="tab1_prov")
+    with fcol2:
+        cant_sel = st.multiselect("Cantón", cantones, default=[], key="tab1_cant")
+    with fcol3:
+        estr_sel = st.multiselect("Estructura", estructuras, default=[], key="tab1_estr")
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
     f = long.copy()
     if prov_sel:
@@ -400,9 +425,6 @@ with tab_estructuras:
     cantones_unicos = f["canton"].nunique()
     estructuras_unicas = f["estructura"].nunique()
 
-    # =========================
-    # KPI (IGUAL pero con color)
-    # =========================
     st.markdown(
         f"""
         <div class="kpi-grid">
@@ -423,9 +445,6 @@ with tab_estructuras:
 
     st.markdown("<hr/>", unsafe_allow_html=True)
 
-    # =========================
-    # MAP BUILDER (IGUAL)
-    # =========================
     def render_map(df_filtered: pd.DataFrame, height_px: int):
         fm = df_filtered.dropna(subset=["lat", "lon"]).copy()
         if fm.empty:
@@ -505,12 +524,9 @@ with tab_estructuras:
         st_folium(m, use_container_width=True, height=height_px)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # =========================
-    # FULLSCREEN MODE (IGUAL)
-    # =========================
     if st.session_state["map_fullscreen"]:
         st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
-        if st.button("⬅️ Salir de pantalla completa"):
+        if st.button("⬅️ Salir de pantalla completa", key="tab1_exit_full"):
             st.session_state["map_fullscreen"] = False
             st.rerun()
         st.markdown("<span class='caption'>Modo pantalla completa: el mapa ocupa casi toda la pantalla.</span>", unsafe_allow_html=True)
@@ -519,16 +535,12 @@ with tab_estructuras:
         render_map(f, height_px=920)
         st.stop()
 
-    # =========================
-    # VISTA NORMAL (IGUAL)
-    # =========================
     left, right = st.columns([1.05, 0.95], gap="large")
 
     with left:
         st.markdown("<div class='panel'>", unsafe_allow_html=True)
         st.subheader("Top estructuras (conteos)")
 
-        # ✅ TOP 10 (nuevo)
         top_struct = (
             f.groupby("estructura")
             .size()
@@ -542,7 +554,6 @@ with tab_estructuras:
 
         st.subheader("Tabla normalizada")
 
-        # ✅ Tabla unificada (nuevo): provincia, cantón, lista de estructuras
         tabla_unificada = (
             f.groupby(["provincia", "canton"])["estructura"]
             .apply(lambda s: ", ".join(sorted(set(s))))
@@ -564,7 +575,7 @@ with tab_estructuras:
         st.subheader("Mapa satelital (ESRI) — puntos por cantón")
 
         st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
-        if st.button("⛶ Ver mapa en pantalla completa"):
+        if st.button("⛶ Ver mapa en pantalla completa", key="tab1_full_btn"):
             st.session_state["map_fullscreen"] = True
             st.rerun()
         st.markdown("<span class='caption'>Abre el mapa ocupando casi toda la pantalla.</span>", unsafe_allow_html=True)
@@ -575,23 +586,22 @@ with tab_estructuras:
 
     st.markdown("<hr/>", unsafe_allow_html=True)
 
-    # =========================
-    # DESCARGA + RESUMEN (IGUAL)
-    # =========================
     csv_bytes = f.to_csv(index=False).encode("utf-8")
     st.download_button(
         "⬇️ Descargar datos filtrados (CSV)",
         data=csv_bytes,
         file_name="cantones_estructuras_normalizado.csv",
-        mime="text/csv"
+        mime="text/csv",
+        key="tab1_csv"
     )
 
     st.markdown(
         f"<div class='caption'>Resumen: <b>{estructuras_unicas}</b> estructuras únicas en <b>{cantones_unicos}</b> cantones (según filtros).</div>",
         unsafe_allow_html=True
     )
+
 # =============================================================================
-# ============================== TAB 2 (NUEVA) =================================
+# ============================== TAB 2 (BANDAS) =================================
 # =============================================================================
 with tab_bandas:
 
@@ -599,7 +609,6 @@ with tab_bandas:
     # NORMALIZACIÓN PARA PROVINCIAS/CANTONES (Bandas)
     # =========================
     def _strip_accents(s: str) -> str:
-        # sin librerías extra, mapeo básico
         if s is None:
             return ""
         s = str(s)
@@ -619,10 +628,9 @@ with tab_bandas:
         p = p.replace("  ", " ")
         p_low = p.lower()
 
-        # llevarlo a las llaves existentes en PROV_COLORS
         if p_low in ["san jose", "san josé"]:
             return "San Jose"
-        if p_low == "limon" or p_low == "limón":
+        if p_low in ["limon", "limón"]:
             return "Limon"
         if p_low == "puntarenas":
             return "Puntarenas"
@@ -634,14 +642,13 @@ with tab_bandas:
             return "Cartago"
         if p_low == "alajuela":
             return "Alajuela"
-        # "Institucion" se deja como viene
         return p
 
     def normalize_canton_bandas(c: str) -> str:
         c = clean_txt(c)
         c = _strip_accents(c)
         c = c.replace("  ", " ")
-        # homologar a claves existentes
+
         if c.lower() == "peñas blancas":
             return "Penas Blancas"
         if c.lower() == "cóbano":
@@ -650,18 +657,14 @@ with tab_bandas:
             return "Rio Cuarto"
         if c.lower() == "san josé":
             return "San Jose"
-        if c.lower() == "goicoechea":
-            return "Goicoechea"
         if c.lower() == "turrialba":
             return "Turrialba"
         if c.lower() == "tucurrique":
             return "Tucurrique"
-        if c.lower() == "pococi":
-            return "Pococi"
         return c
 
     # =========================
-    # DATOS DE BANDAS (CARGADOS EN CÓDIGO, COMO VENÍS TRABAJANDO)
+    # DATOS DE BANDAS (EN CÓDIGO)
     # =========================
     BANDAS_RAW = [
         # Alajuela
@@ -674,19 +677,19 @@ with tab_bandas:
         ("Alajuela", "Naranjo", "Banda Escuela de Concepción, Colegio La Candelaria, Banda Municipal", 155),
         ("Alajuela", "Orotina", "Banda Comunal de Orotina", 250),
         ("Alajuela", "Palmares", "Banda Escuela Municipal de Palmares", 178),
-        ("Alajuela", "Penas Blancas", "Banda Municipal de Peñas Blancas", 40),
+        ("Alajuela", "Peñas Blancas", "Banda Municipal de Peñas Blancas", 40),
         ("Alajuela", "Rio Cuarto", "Banda Comunal de Rio Cuarto", 50),
         ("Alajuela", "San Carlos", "Banda Municipal de San Carlos", 150),
         ("Alajuela", "San Mateo", "Banda Municipal de San Mateo", 100),
         ("Alajuela", "Upala", "Escuela Música Municipal de Upala", 100),
         ("Alajuela", "Zarcero", "Banda de marcha de Zarcero", 300),
 
-        # Cartago (algunos venían sin número visible → se deja como None)
+        # Cartago
         ("Cartago", "Cartago", "Banda Escuela de Cartago", None),
         ("Cartago", "Cervantes", "Banda Escuela for Cerva de Cervantes", None),
-        ("Cartago", "Jimenez", "Escuela Municipal de Música de Jiménez", 79),
-        ("Cartago", "La Union", "Escuela de la Música de La Unión", 20),
-        ("Cartago", "La Union", "Banda Municipal de Marca de la Unión", 30),
+        ("Cartago", "Jiménez", "Escuela Municipal de Música de Jiménez", 79),
+        ("Cartago", "La Unión", "Escuela de la Música de La Unión", 20),
+        ("Cartago", "La Unión", "Banda Municipal de Marca de la Unión", 30),
         ("Cartago", "Tucurrique", "Banda Escuela de Tucurrique", None),
         ("Cartago", "Turrialba", "Banda Municipal de Turrialba", 42),
 
@@ -697,28 +700,30 @@ with tab_bandas:
         ("Guanacaste", "La Cruz", "Escuela de Musica La Cruz", 350),
         ("Guanacaste", "Nicoya", "Banda de marcha municipal", 180),
         ("Guanacaste", "Santa Cruz", "Centro Civico por la Paz Santa Cruz/Proy Policiamiento Comunitario", None),
-        ("Guanacaste", "Tilaran", "Banda Escuela Municipal de Tilaran", 150),
+        ("Guanacaste", "Tilarán", "Banda Escuela Municipal de Tilaran", 150),
 
         # Heredia
-        ("Heredia", "Barba", "Casa de la música de Barva", 50),
+        ("Heredia", "Barva", "Casa de la música de Barva", 50),
         ("Heredia", "Flores", "Banda Escuela Municipal de Flores", 50),
         ("Heredia", "Heredia", "Banda Escuela for Heredia de Heredia", 100),
         ("Heredia", "San Pablo", "Escuela de Musica", 100),
         ("Heredia", "San Pablo", "Banda estudiantil MAVISA", 150),
-        ("Heredia", "Santa Barbara", "Banda Municipal de Santa Bárbara", 50),
-        ("Heredia", "Sarapiqui", "Banda Escuela Piano de Sarapiqui", 25),
-        ("Heredia", "Sarapiqui", "Banda Escuela de Sarapiqui", 100),
-        ("Heredia", "Vice Paz", "Centro Civico por la Paz", 25),
+        ("Heredia", "Santa Bárbara", "Banda Municipal de Santa Bárbara", 50),
+        ("Heredia", "Sarapiquí", "Banda Escuela Piano de Sarapiqui", 25),
+        ("Heredia", "Sarapiquí", "Banda Escuela de Sarapiqui", 100),
+
+        # Institución (sin coords)
+        ("Institucion", "Vice Paz", "Centro Civico por la Paz", 25),
 
         # Limón
-        ("Limón", "Limon", "Kawe Calipso Youth", 30),
+        ("Limón", "Limón", "Kawe Calipso Youth", 30),
         ("Limón", "Matina", "Banda Municipal d Matina", 45),
         ("Limón", "Pococi", "Banda Escuela Municipal de Pococi", 100),
         ("Limón", "Pococi", "Banda Cospnli de for NPA Pococi", 100),
         ("Limón", "Siquirres", "Banda Escuela for Siqui de Siquirres", 50),
 
         # Puntarenas
-        ("Puntarenas", "Cobano", "Banda Escuela for CMD C de Cóbano", 75),
+        ("Puntarenas", "Cóbano", "Banda Escuela for CMD C de Cóbano", 75),
         ("Puntarenas", "Coto Brus", "Banda Municipal de Coto Brus", 75),
         ("Puntarenas", "Coto Brus", "Colideportivo de Brus", 50),
         ("Puntarenas", "Puntarenas", "Banda de Puntarenas Barranca", 150),
@@ -726,7 +731,7 @@ with tab_bandas:
 
         # San José
         ("San José", "Acosta", "Banda Escuela Instrumen de Acosta", 50),
-        ("San José", "Aserri", "Banda Escuela for Aserr de Aserri", 50),
+        ("San José", "Aserrí", "Banda Escuela for Aserr de Aserri", 50),
         ("San José", "Desamparados", "Banda Municipal de Desamparados", 195),
         ("San José", "Desamparados", "Banda Municipal de Desamparados", 0),
         ("San José", "Desamparados", "Banda Escuela de Desamparados", 75),
@@ -738,13 +743,10 @@ with tab_bandas:
         ("San José", "Goicoechea", "Banda de Marcha de Heredia", 50),
         ("San José", "Santa Ana", "Banda Cantonal Municipal de Santa Ana", 115),
         ("San José", "Santa Ana", "EMAI", 100),
-        ("San José", "Tarrazu", "Banda Escuela Municipal de Tarrazu", 30),
+        ("San José", "Tarrazú", "Banda Escuela Municipal de Tarrazu", 30),
         ("San José", "Turrubares", "Banda Escuela Municipal de Turrubares", 25),
     ]
 
-    # =========================
-    # BUILD DF BANDAS
-    # =========================
     def build_bandas_df() -> pd.DataFrame:
         rows = []
         for prov, canton, banda, ben in BANDAS_RAW:
@@ -763,32 +765,34 @@ with tab_bandas:
                 "lon": lon
             })
         df = pd.DataFrame(rows)
-
-        # numérico (para sumas); None→NaN
         df["beneficiarios_num"] = pd.to_numeric(df["beneficiarios"], errors="coerce")
         return df
 
     bandas = build_bandas_df()
 
-    # =========================
-    # HEADER (misma línea visual)
-    # =========================
     st.markdown("<div class='title'>Bandas / Beneficiarios</div>", unsafe_allow_html=True)
     st.markdown("<div class='subtitle'>Mapa satelital ESRI, puntos por cantón y total de beneficiarios por provincia.</div>", unsafe_allow_html=True)
 
     # =========================
-    # FILTROS (Bandas) — en sidebar también
+    # FILTROS (TAB 2) — SEPARADOS (solo Bandas)
     # =========================
-    with st.sidebar:
-        st.header("Filtros (Bandas)")
+    st.markdown("<div class='panel'>", unsafe_allow_html=True)
+    st.subheader("Filtros (Bandas)")
 
-        prov_b = sorted(bandas["provincia"].dropna().unique().tolist())
-        cant_b = sorted(bandas["canton"].dropna().unique().tolist())
-        banda_b = sorted(bandas["banda"].dropna().unique().tolist())
+    bcol1, bcol2, bcol3 = st.columns([1, 1, 1], gap="medium")
 
-        prov_sel_b = st.multiselect("Provincia (Bandas)", prov_b, default=[])
-        cant_sel_b = st.multiselect("Cantón (Bandas)", cant_b, default=[])
-        banda_sel_b = st.multiselect("Banda/Club", banda_b, default=[])
+    prov_b = sorted(bandas["provincia"].dropna().unique().tolist())
+    cant_b = sorted(bandas["canton"].dropna().unique().tolist())
+    banda_b = sorted(bandas["banda"].dropna().unique().tolist())
+
+    with bcol1:
+        prov_sel_b = st.multiselect("Provincia (Bandas)", prov_b, default=[], key="tab2_prov")
+    with bcol2:
+        cant_sel_b = st.multiselect("Cantón (Bandas)", cant_b, default=[], key="tab2_cant")
+    with bcol3:
+        banda_sel_b = st.multiselect("Banda/Club", banda_b, default=[], key="tab2_banda")
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
     fb = bandas.copy()
     if prov_sel_b:
@@ -798,9 +802,6 @@ with tab_bandas:
     if banda_sel_b:
         fb = fb[fb["banda"].isin(banda_sel_b)]
 
-    # =========================
-    # KPI (mismo estilo pero enfocado a Bandas)
-    # =========================
     cantones_b = fb["canton"].nunique()
     bandas_unicas_b = fb["banda"].nunique()
     total_benef = float(fb["beneficiarios_num"].sum(skipna=True))
@@ -825,9 +826,6 @@ with tab_bandas:
 
     st.markdown("<hr/>", unsafe_allow_html=True)
 
-    # =========================
-    # MAP BUILDER (Bandas)
-    # =========================
     def render_map_bandas(df_filtered: pd.DataFrame, height_px: int):
         fm = df_filtered.dropna(subset=["lat", "lon"]).copy()
         if fm.empty:
@@ -890,8 +888,7 @@ with tab_bandas:
             popup = folium.Popup(html, max_width=440)
             tooltip = f"{canton} ({provincia}) | {beneficiarios:,} beneficiarios"
 
-            # radio según beneficiarios
-            radius = 7 + min(18, beneficiarios / 25 if beneficiarios else 6)
+            radius = 7 + min(18, (beneficiarios / 25) if beneficiarios else 6)
 
             folium.CircleMarker(
                 location=[float(r["lat"]), float(r["lon"])],
@@ -909,12 +906,9 @@ with tab_bandas:
         st_folium(m, use_container_width=True, height=height_px)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # =========================
-    # FULLSCREEN MODE (Bandas)
-    # =========================
     if st.session_state["map_fullscreen_bandas"]:
         st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
-        if st.button("⬅️ Salir de pantalla completa (Bandas)"):
+        if st.button("⬅️ Salir de pantalla completa (Bandas)", key="tab2_exit_full"):
             st.session_state["map_fullscreen_bandas"] = False
             st.rerun()
         st.markdown("<span class='caption'>Modo pantalla completa: el mapa ocupa casi toda la pantalla.</span>", unsafe_allow_html=True)
@@ -923,9 +917,6 @@ with tab_bandas:
         render_map_bandas(fb, height_px=920)
         st.stop()
 
-    # =========================
-    # VISTA NORMAL (Bandas)
-    # =========================
     left2, right2 = st.columns([1.05, 0.95], gap="large")
 
     with left2:
@@ -970,7 +961,7 @@ with tab_bandas:
         st.subheader("Mapa satelital (ESRI) — Bandas por cantón")
 
         st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
-        if st.button("⛶ Ver mapa en pantalla completa (Bandas)"):
+        if st.button("⛶ Ver mapa en pantalla completa (Bandas)", key="tab2_full_btn"):
             st.session_state["map_fullscreen_bandas"] = True
             st.rerun()
         st.markdown("<span class='caption'>Al tocar un punto: cantón + beneficiarios + listado de bandas.</span>", unsafe_allow_html=True)
@@ -981,9 +972,6 @@ with tab_bandas:
 
     st.markdown("<hr/>", unsafe_allow_html=True)
 
-    # =========================
-    # DESCARGA (Bandas)
-    # =========================
     csv_bandas = fb.copy()
     csv_bandas.drop(columns=["beneficiarios_num"], inplace=True, errors="ignore")
     csv_bytes_b = csv_bandas.to_csv(index=False).encode("utf-8")
@@ -992,12 +980,12 @@ with tab_bandas:
         "⬇️ Descargar datos filtrados (Bandas) (CSV)",
         data=csv_bytes_b,
         file_name="bandas_beneficiarios_filtrado.csv",
-        mime="text/csv"
+        mime="text/csv",
+        key="tab2_csv"
     )
 
     st.markdown(
         f"<div class='caption'>Resumen: <b>{bandas_unicas_b}</b> bandas/clubes en <b>{cantones_b}</b> cantones. Beneficiarios (sumados): <b>{int(total_benef):,}</b>.</div>",
         unsafe_allow_html=True
     )
-
 
