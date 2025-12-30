@@ -711,9 +711,7 @@ with tab_bandas:
         ("Heredia", "Santa Bárbara", "Banda Municipal de Santa Bárbara", 50),
         ("Heredia", "Sarapiquí", "Banda Escuela Piano de Sarapiqui", 25),
         ("Heredia", "Sarapiquí", "Banda Escuela de Sarapiqui", 100),
-
-        # Institución (sin coords)
-        ("Institucion", "Vice Paz", "Centro Civico por la Paz", 25),
+        ("Heredia", "Vice Paz", "Centro Civico por la Paz", 25),
 
         # Limón
         ("Limón", "Limón", "Kawe Calipso Youth", 30),
@@ -988,4 +986,5 @@ with tab_bandas:
         f"<div class='caption'>Resumen: <b>{bandas_unicas_b}</b> bandas/clubes en <b>{cantones_b}</b> cantones. Beneficiarios (sumados): <b>{int(total_benef):,}</b>.</div>",
         unsafe_allow_html=True
     )
+
 
