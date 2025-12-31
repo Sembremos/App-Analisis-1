@@ -1369,7 +1369,7 @@ with tab4:
 
     with left:
         st.markdown("<div class='panel'>", unsafe_allow_html=True)
-        st.subheader("Gráfico 1 — Matriculadas vs Egresadas (por provincia)")
+        st.subheader("Personas Matriculadas vs Egresadas (por provincia)")
 
         prov_m = (
             f4.groupby("provincia")[["matriculadas", "egresadas_num"]]
@@ -1387,7 +1387,7 @@ with tab4:
         fig4a.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10))
         st.plotly_chart(fig4a, use_container_width=True)
 
-        st.subheader("Gráfico 2 — Hombres vs Mujeres (por provincia)")
+        st.subheader("Cantidad de Hombres vs Mujeres (por provincia)")
         prov_hm = (
             f4.groupby("provincia")[["hombres", "mujeres"]]
             .sum()
@@ -1449,3 +1449,4 @@ with tab4:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="dl_xlsx_t4"
     )
+
