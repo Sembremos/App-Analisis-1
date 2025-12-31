@@ -1,4 +1,3 @@
-# ============================== PARTE 1/4 ==============================
 # app.py
 # streamlit run app.py
 
@@ -10,9 +9,10 @@ import plotly.express as px
 import folium
 from streamlit_folium import st_folium
 
+# Excel bonito (requiere openpyxl en requirements.txt)
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.utils import get_column_letter
 
 # =========================
 # CONFIG
@@ -20,17 +20,25 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 st.set_page_config(page_title="CR | Mapas y Programas", page_icon="🛰️", layout="wide")
 
 # =========================
-# ESTILO (MISMA LÍNEA VISUAL)
+# ESTILO (MISMA LÍNEA VISUAL, PERO SIN ROMPER TABS NI TEXTO)
 # =========================
 st.markdown(
     """
     <style>
       .block-container {padding-top: 1.0rem; padding-bottom: 2rem;}
+
+      /* ✅ Evita transformaciones raras de texto (EstrukturAs, etc.) */
+      h1, h2, h3, h4, h5, h6, p, span, div {
+        text-transform: none !important;
+        letter-spacing: normal !important;
+        font-variant: normal !important;
+      }
+
       .title{font-size: 28px; font-weight: 900; letter-spacing: -0.02em; margin-bottom: 2px;}
       .subtitle{color:#6b7280; margin-top:0px; margin-bottom: 14px;}
       .kpi-grid{display:flex; gap:14px; flex-wrap:wrap; margin-bottom: 10px;}
 
-      /* KPI con color */
+      /* === KPI con color === */
       .kpi{
         border-radius:18px;
         padding:16px 18px;
@@ -48,7 +56,7 @@ st.markdown(
         border:1px solid rgba(16,185,129,0.35);
       }
       .kpi.kpi-c{
-        background: linear-gradient(135deg, rgba(245,158,11,0.22), rgba(251,146,60,0.10));
+        background: linear-gradient(135deg, rgba(245,158,11,0.20), rgba(251,191,36,0.10));
         border:1px solid rgba(245,158,11,0.35);
       }
 
@@ -64,15 +72,28 @@ st.markdown(
       .caption{color:#6b7280; font-size:12px;}
       .btnrow{display:flex; gap:10px; align-items:center; margin: 6px 0 10px 0;}
       .mapwrap{border-radius:18px; overflow:hidden;}
-      .filterbox{
-        background:#0b1220;
-        border:1px solid rgba(255,255,255,0.10);
-        border-radius:18px;
-        padding:12px 12px;
-        box-shadow:0 10px 25px rgba(0,0,0,0.25);
+
+      /* ✅ FORZAR VISIBILIDAD DE PESTAÑAS (tabs) */
+      div[data-baseweb="tab-list"]{
+        display:flex !important;
+        gap: 10px !important;
+        padding: 10px 6px !important;
+        border-bottom: 1px solid rgba(229,231,235,0.18) !important;
+        overflow-x: auto !important;
       }
-      .filtertitle{color:#ffffff; font-weight:900; font-size:14px; margin-bottom:6px;}
-      .smallhint{color:#cbd5e1; font-size:12px; margin-top:6px;}
+      button[data-baseweb="tab"]{
+        color: #e5e7eb !important;
+        background: rgba(255,255,255,0.06) !important;
+        border-radius: 12px !important;
+        padding: 10px 14px !important;
+        border: 1px solid rgba(255,255,255,0.10) !important;
+        font-weight: 800 !important;
+        white-space: nowrap !important;
+      }
+      button[data-baseweb="tab"][aria-selected="true"]{
+        background: rgba(99,102,241,0.20) !important;
+        border: 1px solid rgba(99,102,241,0.35) !important;
+      }
     </style>
     """,
     unsafe_allow_html=True
@@ -81,11 +102,17 @@ st.markdown(
 # =========================
 # SESSION STATE
 # =========================
-if "map_fullscreen" not in st.session_state:
-    st.session_state["map_fullscreen"] = {"t1": False, "t2": False, "t3": False, "t4": False}
+if "map_fullscreen_tab1" not in st.session_state:
+    st.session_state["map_fullscreen_tab1"] = False
+if "map_fullscreen_tab2" not in st.session_state:
+    st.session_state["map_fullscreen_tab2"] = False
+if "map_fullscreen_tab3" not in st.session_state:
+    st.session_state["map_fullscreen_tab3"] = False
+if "map_fullscreen_tab4" not in st.session_state:
+    st.session_state["map_fullscreen_tab4"] = False
 
 # =========================
-# COLORES POR PROVINCIA (MISMO ESQUEMA)
+# COLORES POR PROVINCIA
 # =========================
 PROV_COLORS = {
     "San Jose":    {"stroke": "#6d28d9", "fill": "#8b5cf6"},  # morado
@@ -97,11 +124,22 @@ PROV_COLORS = {
     "Limon":       {"stroke": "#a16207", "fill": "#facc15"},  # amarillo
 }
 
+# Orden fijo solicitado para tablas
 PROV_ORDER = ["San Jose", "Alajuela", "Cartago", "Heredia", "Guanacaste", "Puntarenas", "Limon"]
 
+def sort_by_provincia(df: pd.DataFrame) -> pd.DataFrame:
+    if "provincia" not in df.columns:
+        return df
+    out = df.copy()
+    out["__prov_ord__"] = out["provincia"].apply(lambda x: PROV_ORDER.index(x) if x in PROV_ORDER else 999)
+    sort_cols = ["__prov_ord__", "provincia"]
+    if "canton" in out.columns:
+        sort_cols.append("canton")
+    out = out.sort_values(sort_cols).drop(columns=["__prov_ord__"])
+    return out
+
 # =========================
-# NORMALIZACIÓN (MISMA LÓGICA)
-# - "Diablo" y "Diablo - Alejandro Arias Monge" = MISMA estructura
+# NORMALIZACIÓN DE TEXTO
 # =========================
 def clean_txt(x: str) -> str:
     if pd.isna(x):
@@ -119,42 +157,13 @@ def normalize_estructura(name: str) -> str:
         return "Diablo - Alejandro Arias Monge"
     return name
 
-def titlecase_first(s: str) -> str:
-    s = clean_txt(s)
-    if not s:
-        return s
-    return s[0].upper() + s[1:]
-
-def safe_int(x):
-    if pd.isna(x):
-        return 0
-    x = str(x).strip()
-    if x == "":
-        return 0
-    # permite "En proceso"
-    if re.search(r"[a-zA-Z]", x):
-        return 0
-    try:
-        return int(float(x))
-    except:
-        return 0
-
-def parse_canton_only(x: str) -> str:
-    """
-    - Si viene 'Canton / Distrito' => toma el cantón
-    - Si viene 'Provincia / Canton ...' => toma lo primero (cantón real en tus datos tipo CPC)
-    """
-    x = clean_txt(x)
-    if not x:
-        return ""
-    # separadores típicos que mandaste: "Alajuela / Los Cocos", "San José/ Hatillo", "Pococi/ la Sole"
-    parts = [p.strip() for p in re.split(r"\s*/\s*", x) if p.strip()]
-    if len(parts) >= 1:
-        return parts[0]
-    return x
+def title_case_headers(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = [c[:1].upper() + c[1:] if isinstance(c, str) and c else c for c in df.columns]
+    return df
 
 # =========================
-# COORDENADAS (CENTROIDES APROX. PARA MAPEAR)
+# COORDENADAS (centroides cantonales aprox)
 # =========================
 CANTON_COORDS = {
     # San José
@@ -246,6 +255,7 @@ CANTON_COORDS = {
     "Garabito": (9.6200, -84.6300),
     "Monteverde": (10.3000, -84.8200),
     "Puerto Jimenez": (8.5300, -83.3000),
+    "Quepos": (9.4320, -84.1620),
 
     # Limón
     "Limon": (9.9900, -83.0300),
@@ -257,159 +267,198 @@ CANTON_COORDS = {
 }
 
 # =========================
-# CANTÓN -> PROVINCIA (para datasets SIN provincia)
+# CANTON -> PROVINCIA (para datasets sin provincia)
 # =========================
 CANTON_TO_PROV = {
-    # San José
-    "San Jose": "San Jose", "Escazu": "San Jose", "Desamparados": "San Jose", "Puriscal": "San Jose",
-    "Tarrazu": "San Jose", "Aserri": "San Jose", "Mora": "San Jose", "Goicoechea": "San Jose",
-    "Santa Ana": "San Jose", "Alajuelita": "San Jose", "Vasquez de Coronado": "San Jose", "Acosta": "San Jose",
-    "Tibas": "San Jose", "Moravia": "San Jose", "Montes de Oca": "San Jose", "Turrubares": "San Jose",
-    "Dota": "San Jose", "Curridabat": "San Jose", "Perez Zeledon": "San Jose", "Leon Cortes": "San Jose",
+    # San Jose
+    "San Jose": "San Jose",
+    "Acosta": "San Jose",
+    "Aserri": "San Jose",
+    "Alajuelita": "San Jose",
+    "Desamparados": "San Jose",
+    "Dota": "San Jose",
+    "Curridabat": "San Jose",
+    "Goicoechea": "San Jose",
+    "Montes de Oca": "San Jose",
+    "Mora": "San Jose",
+    "Puriscal": "San Jose",
+    "Santa Ana": "San Jose",
+    "Tarraszu": "San Jose",
+    "Tarrazu": "San Jose",
+    "Tibás": "San Jose",
+    "Tibas": "San Jose",
+    "Turrubares": "San Jose",
+    "Vasquez de Coronado": "San Jose",
+    "Perez Zeledon": "San Jose",
+    "Leon Cortes": "San Jose",
 
     # Alajuela
-    "Alajuela": "Alajuela", "San Ramon": "Alajuela", "Grecia": "Alajuela", "San Mateo": "Alajuela",
-    "Atenas": "Alajuela", "Naranjo": "Alajuela", "Palmares": "Alajuela", "Poas": "Alajuela",
-    "Orotina": "Alajuela", "San Carlos": "Alajuela", "Zarcero": "Alajuela", "Sarchi": "Alajuela",
-    "Upala": "Alajuela", "Los Chiles": "Alajuela", "Guatuso": "Alajuela", "Rio Cuarto": "Alajuela",
+    "Alajuela": "Alajuela",
+    "Atenas": "Alajuela",
+    "Grecia": "Alajuela",
+    "Guatuso": "Alajuela",
+    "Los Chiles": "Alajuela",
+    "Naranjo": "Alajuela",
+    "Orotina": "Alajuela",
+    "Palmares": "Alajuela",
+    "Peñas Blancas": "Alajuela",
+    "Rio Cuarto": "Alajuela",
+    "San Carlos": "Alajuela",
+    "San Mateo": "Alajuela",
+    "San Ramon": "Alajuela",
+    "Upala": "Alajuela",
+    "Zarcero": "Alajuela",
+    "Sarchi": "Alajuela",
+    "Poas": "Alajuela",
 
     # Cartago
-    "Cartago": "Cartago", "Paraiso": "Cartago", "La Union": "Cartago", "Jimenez": "Cartago",
-    "Turrialba": "Cartago", "Alvarado": "Cartago", "Oreamuno": "Cartago", "El Guarco": "Cartago",
+    "Cartago": "Cartago",
+    "Cervantes": "Cartago",
+    "Jimenez": "Cartago",
+    "La Union": "Cartago",
+    "Tucurrique": "Cartago",
+    "Turrialba": "Cartago",
+    "Paraiso": "Cartago",
+    "Oreamuno": "Cartago",
+    "Alvarado": "Cartago",
+    "El Guarco": "Cartago",
 
     # Heredia
-    "Heredia": "Heredia", "Barba": "Heredia", "Santo Domingo": "Heredia", "Santa Barbara": "Heredia",
-    "San Rafael": "Heredia", "San Isidro": "Heredia", "Belen": "Heredia", "Flores": "Heredia",
-    "San Pablo": "Heredia", "Sarapiqui": "Heredia",
+    "Heredia": "Heredia",
+    "Barva": "Heredia",
+    "Flores": "Heredia",
+    "San Pablo": "Heredia",
+    "Santa Barbara": "Heredia",
+    "Sarapiqui": "Heredia",
 
     # Guanacaste
-    "Liberia": "Guanacaste", "Nicoya": "Guanacaste", "Santa Cruz": "Guanacaste", "Bagaces": "Guanacaste",
-    "Carrillo": "Guanacaste", "Cañas": "Guanacaste", "Abangares": "Guanacaste", "Tilaran": "Guanacaste",
-    "Nandayure": "Guanacaste", "La Cruz": "Guanacaste", "Hojancha": "Guanacaste",
+    "Abangares": "Guanacaste",
+    "Bagaces": "Guanacaste",
+    "Colorado": "Guanacaste",
+    "La Cruz": "Guanacaste",
+    "Nicoya": "Guanacaste",
+    "Santa Cruz": "Guanacaste",
+    "Tilaran": "Guanacaste",
+    "Liberia": "Guanacaste",
 
     # Puntarenas
-    "Puntarenas": "Puntarenas", "Esparza": "Puntarenas", "Buenos Aires": "Puntarenas", "Montes de Oro": "Puntarenas",
-    "Osa": "Puntarenas", "Aguirre": "Puntarenas", "Golfito": "Puntarenas", "Coto Brus": "Puntarenas",
-    "Parrita": "Puntarenas", "Corredores": "Puntarenas", "Garabito": "Puntarenas", "Monteverde": "Puntarenas",
-    "Puerto Jimenez": "Puntarenas", "Quepos": "Puntarenas",
+    "Cóbano": "Puntarenas",
+    "Cobano": "Puntarenas",
+    "Coto Brus": "Puntarenas",
+    "Puntarenas": "Puntarenas",
+    "Quepos": "Puntarenas",
+    "Osa": "Puntarenas",
+    "Corredores": "Puntarenas",
 
-    # Limón
-    "Limon": "Limon", "Pococi": "Limon", "Siquirres": "Limon", "Talamanca": "Limon", "Matina": "Limon", "Guacimo": "Limon",
+    # Limon
+    "Limon": "Limon",
+    "Limón": "Limon",
+    "Matina": "Limon",
+    "Pococi": "Limon",
+    "Pococí": "Limon",
+    "Siquirres": "Limon",
 }
 
-# =========================
-# EXPORT EXCEL ORDENADO (SIN COORDENADAS)
-# =========================
-def df_to_pretty_excel_bytes(df: pd.DataFrame, sheet_name: str = "Datos") -> bytes:
+def extract_main_canton(raw: str) -> str:
+    """
+    Ejemplos:
+      "Alajuela / Los Cocos" -> "Alajuela"
+      "Desamparados/ Los Guido" -> "Desamparados"
+      "La Cruz Santa Cecilia" -> "La Cruz"
+      "Limón / Limoncito" -> "Limon"
+    """
+    s = clean_txt(raw)
+    if not s:
+        return ""
+    s = s.replace("Limón", "Limon")
+    # Si hay "/", tomar lo de la izquierda
+    if "/" in s:
+        left = s.split("/")[0].strip()
+        return left
+    # Casos con "La Cruz Santa Cecilia"
+    if s.lower().startswith("la cruz"):
+        return "La Cruz"
+    # Casos "San José / Pavas"
+    if s.lower().startswith("san jos"):
+        return "San Jose"
+    # Caso "Alajuela y nombre extenso" (de tu nota) => solo Alajuela
+    if s.lower().startswith("alajuela"):
+        return "Alajuela"
+    return s
+
+def add_coords(df: pd.DataFrame, canton_col: str = "canton") -> pd.DataFrame:
     df = df.copy()
+    df["lat"] = df[canton_col].map(lambda c: CANTON_COORDS.get(c, (None, None))[0])
+    df["lon"] = df[canton_col].map(lambda c: CANTON_COORDS.get(c, (None, None))[1])
+    return df
 
-    # eliminar coords si existen
-    for c in ["lat", "lon", "Lat", "Lon", "LAT", "LON"]:
-        if c in df.columns:
-            df.drop(columns=[c], inplace=True)
+def ensure_provincia(df: pd.DataFrame, canton_col: str = "canton") -> pd.DataFrame:
+    df = df.copy()
+    if "provincia" not in df.columns:
+        df["provincia"] = df[canton_col].map(lambda c: CANTON_TO_PROV.get(c, ""))
+    return df
 
-    # encabezados con primera letra mayúscula
-    df.columns = [titlecase_first(c) for c in df.columns]
-
+# =========================
+# EXPORT EXCEL BONITO (sin coordenadas)
+# =========================
+def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Datos") -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = sheet_name[:31]
 
-    for r in dataframe_to_rows(df, index=False, header=True):
-        ws.append(r)
+    # Copia sin lat/lon
+    out = df.copy()
+    for col in ["lat", "lon"]:
+        if col in out.columns:
+            out = out.drop(columns=[col])
 
-    # estilos
-    header_fill = PatternFill("solid", fgColor="111827")  # oscuro
+    # Titulos con primera letra mayuscula
+    out = title_case_headers(out)
+
+    headers = list(out.columns)
+    ws.append(headers)
+
+    header_fill = PatternFill("solid", fgColor="1F2937")  # gris oscuro
     header_font = Font(bold=True, color="FFFFFF")
-    thin = Side(style="thin", color="E5E7EB")
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    thin = Side(style="thin", color="9CA3AF")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    for cell in ws[1]:
+    for j, h in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=j, value=h)
         cell.fill = header_fill
         cell.font = header_font
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.alignment = header_align
         cell.border = border
 
-    for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
-        for cell in row:
-            cell.border = border
+    # Filas
+    for _, row in out.iterrows():
+        ws.append(list(row.values))
+
+    # Estilo general
+    for r in range(2, ws.max_row + 1):
+        for c in range(1, ws.max_column + 1):
+            cell = ws.cell(row=r, column=c)
             cell.alignment = Alignment(vertical="top", wrap_text=True)
+            cell.border = border
 
-    ws.freeze_panes = "A2"
-
-    # auto width
-    for col in ws.columns:
-        max_len = 0
-        col_letter = col[0].column_letter
-        for cell in col:
-            val = "" if cell.value is None else str(cell.value)
-            max_len = max(max_len, len(val))
-        ws.column_dimensions[col_letter].width = min(60, max(12, max_len + 2))
+    # Anchos automáticos
+    for col_idx in range(1, ws.max_column + 1):
+        max_len = 10
+        col_letter = get_column_letter(col_idx)
+        for r in range(1, ws.max_row + 1):
+            val = ws.cell(row=r, column=col_idx).value
+            if val is None:
+                continue
+            max_len = max(max_len, len(str(val)))
+        ws.column_dimensions[col_letter].width = min(60, max_len + 2)
 
     bio = io.BytesIO()
     wb.save(bio)
     return bio.getvalue()
-
 # =========================
-# MAP RENDER (REUTILIZABLE)
-# =========================
-def render_map_points(df_points: pd.DataFrame, height_px: int, popup_builder):
-    fm = df_points.dropna(subset=["lat", "lon"]).copy()
-    if fm.empty:
-        st.warning("No hay puntos con coordenadas para mostrar.")
-        return
-
-    center_lat = float(fm["lat"].mean())
-    center_lon = float(fm["lon"].mean())
-
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=8, control_scale=True, tiles=None)
-
-    folium.TileLayer(
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="Esri, Maxar, Earthstar Geographics, CNES/Airbus DS, USDA, USGS",
-        name="ESRI Satélite",
-        overlay=False,
-        control=True
-    ).add_to(m)
-
-    folium.TileLayer(
-        tiles="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-        attr="Esri",
-        name="Límites y lugares",
-        overlay=True,
-        control=True,
-        opacity=0.95
-    ).add_to(m)
-
-    folium.LayerControl(collapsed=True).add_to(m)
-
-    for _, r in fm.iterrows():
-        provincia = r["provincia"]
-        canton = r["canton"]
-
-        colors = PROV_COLORS.get(provincia, {"stroke": "#111827", "fill": "#9ca3af"})
-        tooltip = f"{canton} ({provincia})"
-
-        popup_html, radius = popup_builder(r)
-
-        folium.CircleMarker(
-            location=[float(r["lat"]), float(r["lon"])],
-            radius=radius,
-            weight=2,
-            color=colors["stroke"],
-            fill=True,
-            fill_color=colors["fill"],
-            fill_opacity=0.55,
-            tooltip=tooltip,
-            popup=folium.Popup(popup_html, max_width=450)
-        ).add_to(m)
-
-    st.markdown("<div class='mapwrap'>", unsafe_allow_html=True)
-    st_folium(m, use_container_width=True, height=height_px)
-    st.markdown("</div>", unsafe_allow_html=True)
-# ============================== PARTE 2/4 ==============================
-# =========================
-# DATOS — PESTAÑA 1: ESTRUCTURAS CRIMINALES (TU DATA ORIGINAL)
+# DATASET 1: ESTRUCTURAS (TU DATA ORIGINAL)
 # =========================
 RAW_BY_PROV = {
     "San Jose": [
@@ -515,7 +564,7 @@ RAW_BY_PROV = {
     ],
 }
 
-def build_wide_df_struct() -> pd.DataFrame:
+def build_wide_df() -> pd.DataFrame:
     rows = []
     for prov, items in RAW_BY_PROV.items():
         for canton, structs in items:
@@ -525,7 +574,7 @@ def build_wide_df_struct() -> pd.DataFrame:
             rows.append(r)
     return pd.DataFrame(rows)
 
-def normalize_long_struct(df_wide: pd.DataFrame) -> pd.DataFrame:
+def normalize_long(df_wide: pd.DataFrame) -> pd.DataFrame:
     struct_cols = [c for c in df_wide.columns if c.startswith("e")]
     long = df_wide.melt(
         id_vars=["provincia", "canton"],
@@ -533,22 +582,17 @@ def normalize_long_struct(df_wide: pd.DataFrame) -> pd.DataFrame:
         var_name="col",
         value_name="estructura"
     )
-    long["estructura"] = long["estructura"].apply(clean_txt).apply(normalize_estructura)
+    long["estructura"] = long["estructura"].apply(clean_txt)
+    long["estructura"] = long["estructura"].apply(normalize_estructura)
     long = long[long["estructura"].str.len() > 0].copy()
     long.drop(columns=["col"], inplace=True)
     return long.reset_index(drop=True)
 
-def add_coords(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df["lat"] = df["canton"].map(lambda c: CANTON_COORDS.get(c, (None, None))[0])
-    df["lon"] = df["canton"].map(lambda c: CANTON_COORDS.get(c, (None, None))[1])
-    return df
-
-wide_struct = build_wide_df_struct()
-long_struct = add_coords(normalize_long_struct(wide_struct))
+wide_estruct = build_wide_df()
+df_estruct = add_coords(normalize_long(wide_estruct))
 
 # =========================
-# DATOS — PESTAÑA 2: BANDAS MUSICALES (LO QUE ENVIASTE EN IMÁGENES)
+# DATASET 2: BANDAS MUSICALES (provincia, canton, nombre, beneficiarios)
 # =========================
 BANDAS_ROWS = [
     # Alajuela
@@ -558,7 +602,7 @@ BANDAS_ROWS = [
     ("Alajuela", "Guatuso", "Centro preventivo", 25),
     ("Alajuela", "Guatuso", "Banda Escuela Municipal de Guatuso", 25),
     ("Alajuela", "Los Chiles", "Banda Municipal de Los Chiles", 40),
-    ("Alajuela", "Naranjo", "Banda Escuela de Concepción / Colegio La Candelaria / Banda Municipal", 155),
+    ("Alajuela", "Naranjo", "Banda Escuela de Concepción, Colegio La Candelaria, Banda Municipal", 155),
     ("Alajuela", "Orotina", "Banda Comunal de Orotina", 250),
     ("Alajuela", "Palmares", "Banda Escuela Municipal de Palmares", 178),
     ("Alajuela", "Peñas Blancas", "Banda Municipal de Peñas Blancas", 40),
@@ -568,13 +612,13 @@ BANDAS_ROWS = [
     ("Alajuela", "Upala", "Escuela Música Municipal de Upala", 100),
     ("Alajuela", "Zarcero", "Banda de marcha de Zarcero", 300),
 
-    # Cartago (algunas filas venían sin beneficiarios en la imagen; se dejan como 0 si faltan)
-    ("Cartago", "Cartago", "Banda Escuela de Cartago", 0),
-    ("Cartago", "Cervantes", "Banda Escuela for Cerva de Cervantes", 0),
-    ("Cartago", "Jiménez", "Escuela Municipal de Música de Jiménez", 79),
-    ("Cartago", "La Unión", "Escuela de la Música de La Unión", 20),
-    ("Cartago", "La Unión", "Banda Municipal de Marca de la Unión", 30),
-    ("Cartago", "Tucurrique", "Banda Escuela de Tucurrique", 0),
+    # Cartago
+    ("Cartago", "Cartago", "Banda Escuela de Cartago", None),
+    ("Cartago", "Cervantes", "Banda Escuela for Cerva de Cervantes", None),
+    ("Cartago", "Jimenez", "Escuela Municipal de Música de Jiménez", 79),
+    ("Cartago", "La Union", "Escuela de la Música de La Unión", 20),
+    ("Cartago", "La Union", "Banda Municipal de Marca de la Unión", 30),
+    ("Cartago", "Tucurrique", "Banda Escuela de Tucurrique", None),
     ("Cartago", "Turrialba", "Banda Municipal de Turrialba", 42),
 
     # Guanacaste
@@ -583,7 +627,7 @@ BANDAS_ROWS = [
     ("Guanacaste", "Colorado", "Banda Municipal de Marcha de Colorado", 149),
     ("Guanacaste", "La Cruz", "Escuela de Musica La Cruz", 350),
     ("Guanacaste", "Nicoya", "Banda de marcha municipal", 180),
-    ("Guanacaste", "Santa Cruz", "Centro Cívico por la Paz Santa Cruz / Proy. Polic. Comunitario", 0),
+    ("Guanacaste", "Santa Cruz", "Centro Civico por la Paz Santa Cruz/Proy Policiamiento Comunitario", None),
     ("Guanacaste", "Tilaran", "Banda Escuela Municipal de Tilaran", 150),
 
     # Heredia
@@ -592,15 +636,15 @@ BANDAS_ROWS = [
     ("Heredia", "Heredia", "Banda Escuela for Heredia de Heredia", 100),
     ("Heredia", "San Pablo", "Escuela de Musica", 100),
     ("Heredia", "San Pablo", "Banda estudiantil MAVISA", 150),
-    ("Heredia", "Santa Bárbara", "Banda Municipal de Santa Bárbara", 50),
-    ("Heredia", "Sarapiquí", "Banda Escuela Piano de Sarapiquí", 25),
-    ("Heredia", "Sarapiquí", "Banda Escuela de Sarapiquí", 100),
+    ("Heredia", "Santa Barbara", "Banda Municipal de Santa Bárbara", 50),
+    ("Heredia", "Sarapiqui", "Banda Escuela Piano de Sarapiqui", 25),
+    ("Heredia", "Sarapiqui", "Banda Escuela de Sarapiqui", 100),
 
-    # Institución (se asigna provincia por cantón si aplica; si no, se marca Unknown->San Jose por defecto)
-    ("San Jose", "Vice Paz", "Centro Cívico por la Paz", 25),
+    # (Institucion)
+    ("San Jose", "Vice Paz", "Centro Civico por la Paz", 25),
 
     # Limón
-    ("Limon", "Limón", "Kawe Calipso Youth", 30),
+    ("Limon", "Limon", "Kawe Calipso Youth", 30),
     ("Limon", "Matina", "Banda Municipal d Matina", 45),
     ("Limon", "Pococi", "Banda Escuela Municipal de Pococi", 100),
     ("Limon", "Pococi", "Banda Cospnli de for NPA Pococi", 100),
@@ -623,226 +667,279 @@ BANDAS_ROWS = [
     ("San Jose", "Montes de Oca", "Banda Estudiantil Liceo Anastasio Alfaro", 100),
     ("San Jose", "Montes de Oca", "Banda Estudiantil Liceo Anastasio Alfaro", 0),
     ("San Jose", "Puriscal", "Banda Municipal de Puriscal", 130),
-    ("San Jose", "San José", "Banda Municipal de San José", 200),
+    ("San Jose", "San Jose", "Banda Municipal de San José", 200),
     ("San Jose", "Goicoechea", "Banda de Marcha de Heredia", 50),
     ("San Jose", "Santa Ana", "Banda Cantonal Municipal de Santa Ana", 115),
     ("San Jose", "Santa Ana", "EMAI", 100),
-    ("San Jose", "Tarrazú", "Banda Escuela Municipal de Tarrazú", 30),
+    ("San Jose", "Tarrazu", "Banda Escuela Municipal de Tarrazu", 30),
     ("San Jose", "Turrubares", "Banda Escuela Municipal de Turrubares", 25),
 ]
 
-def normalize_prov_name(p: str) -> str:
-    p = clean_txt(p)
-    # normalizar tildes o variantes
-    if p.lower() in ["san josé", "san jose"]:
-        return "San Jose"
-    if p.lower() in ["limón", "limon"]:
-        return "Limon"
-    if p.lower() == "tarrazú":
-        return "Tarrazu"
-    return p
+df_bandas = pd.DataFrame(BANDAS_ROWS, columns=["provincia", "canton", "nombre", "beneficiarios"])
+df_bandas["nombre"] = df_bandas["nombre"].apply(clean_txt)
+df_bandas["canton"] = df_bandas["canton"].apply(lambda x: clean_txt(x).replace("Limón", "Limon"))
+df_bandas = add_coords(df_bandas)
 
-def build_bandas_df() -> pd.DataFrame:
-    rows = []
-    for prov, canton, nombre, benef in BANDAS_ROWS:
-        prov2 = normalize_prov_name(prov)
-        c = clean_txt(canton).replace("San José", "San Jose").replace("Limón", "Limon")
-        c = c.replace("Tarrazú", "Tarrazu")
-        rows.append({
-            "provincia": prov2,
-            "canton": c,
-            "nombre": clean_txt(nombre),
-            "beneficiarios": safe_int(benef),
-        })
-    df = pd.DataFrame(rows)
-    df["lat"] = df["canton"].map(lambda x: CANTON_COORDS.get(x, (None, None))[0])
-    df["lon"] = df["canton"].map(lambda x: CANTON_COORDS.get(x, (None, None))[1])
-    return df
-
-df_bandas = build_bandas_df()
+# Beneficiarios a numérico (None -> 0 para sumar)
+df_bandas["beneficiarios_num"] = pd.to_numeric(df_bandas["beneficiarios"], errors="coerce").fillna(0).astype(int)
 
 # =========================
-# DATOS — PESTAÑA 3: CENTROS PREVENTIVOS COMUNITARIOS (SIN PROVINCIA -> SE ASIGNA)
+# GENERIC MAP RENDERER
 # =========================
-CPC_ROWS = [
-    (40, "Alajuela / Vistas de Santamaria", "Centro Preventivo Comunitario"),
-    (25, "Alajuela / Los Cocos", "Community Prevention Center"),
-    (60, "Alajuelita / San Felipe", "Safe Space"),
-    (40, "Alajuelita / Centro", "Casa de Creación Juvenil"),
-    (40, "Corredores/ Sabalito", "Safe Space"),
-    (40, "Coto Brus", "Safe Space"),
+def render_map_generic(df_points: pd.DataFrame, height_px: int, popup_mode: str):
+    fm = df_points.dropna(subset=["lat", "lon"]).copy()
+    if fm.empty:
+        st.warning("No hay puntos con coordenadas para mostrar.")
+        return
+
+    center_lat = float(fm["lat"].mean())
+    center_lon = float(fm["lon"].mean())
+
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=8, control_scale=True, tiles=None)
+
+    folium.TileLayer(
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri, Maxar, Earthstar Geographics, CNES/Airbus DS, USDA, USGS",
+        name="ESRI Satélite",
+        overlay=False,
+        control=True
+    ).add_to(m)
+
+    folium.TileLayer(
+        tiles="https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri",
+        name="Límites y lugares",
+        overlay=True,
+        control=True,
+        opacity=0.95
+    ).add_to(m)
+
+    folium.LayerControl(collapsed=True).add_to(m)
+
+    for _, r in fm.iterrows():
+        provincia = r.get("provincia", "")
+        canton = r.get("canton", "")
+        colors = PROV_COLORS.get(provincia, {"stroke": "#111827", "fill": "#9ca3af"})
+
+        if popup_mode == "estructuras":
+            estructuras_list = r.get("estructuras_list", [])
+            tooltip = f"{canton} ({provincia}) | {len(estructuras_list)} estructuras"
+            html = f"""
+            <div style="font-family: Arial; font-size: 13px; line-height: 1.25;">
+              <div style="font-size: 14px;"><b>{canton}</b></div>
+              <div><b>Provincia:</b> {provincia}</div>
+              <div><b>Estructuras:</b> {len(estructuras_list)}</div>
+              <div style="margin-top:6px;"><b>Listado:</b></div>
+              <ul style="margin: 6px 0 0 18px; padding: 0;">
+                {''.join([f'<li>{e}</li>' for e in estructuras_list])}
+              </ul>
+            </div>
+            """
+            radius = 6 + min(16, len(estructuras_list) * 1.6)
+
+        elif popup_mode == "bandas":
+            nombre = r.get("nombre", "")
+            benef = int(r.get("beneficiarios_num", 0))
+            tooltip = f"{canton} ({provincia}) | {benef} beneficiarios"
+            html = f"""
+            <div style="font-family: Arial; font-size: 13px; line-height: 1.25;">
+              <div style="font-size: 14px;"><b>{canton}</b></div>
+              <div><b>Provincia:</b> {provincia}</div>
+              <div style="margin-top:6px;"><b>Banda/Club:</b> {nombre}</div>
+              <div><b>Beneficiarios:</b> {benef}</div>
+            </div>
+            """
+            radius = 6 + min(18, max(1, benef) * 0.05)
+
+        elif popup_mode == "centros":
+            centro = r.get("centro", "")
+            benef = int(r.get("beneficiarios", 0))
+            tooltip = f"{canton} ({provincia}) | {benef} beneficiarios"
+            html = f"""
+            <div style="font-family: Arial; font-size: 13px; line-height: 1.25;">
+              <div style="font-size: 14px;"><b>{canton}</b></div>
+              <div><b>Provincia:</b> {provincia}</div>
+              <div style="margin-top:6px;"><b>Centro:</b> {centro}</div>
+              <div><b>Beneficiarios:</b> {benef}</div>
+            </div>
+            """
+            radius = 6 + min(18, max(1, benef) * 0.06)
+
+        else:  # empleabilidad
+            cursos = r.get("cursos", "")
+            matric = int(r.get("matriculadas", 0))
+            egres = r.get("egresadas_num", r.get("egresadas", 0))
+            h = int(r.get("hombres", 0))
+            mcount = int(r.get("mujeres", 0))
+            tooltip = f"{canton} ({provincia}) | Mat: {matric} | Egr: {egres}"
+            html = f"""
+            <div style="font-family: Arial; font-size: 13px; line-height: 1.25;">
+              <div style="font-size: 14px;"><b>{canton}</b></div>
+              <div><b>Provincia:</b> {provincia}</div>
+              <div style="margin-top:6px;"><b>Matriculadas:</b> {matric}</div>
+              <div><b>Egresadas:</b> {egres}</div>
+              <div><b>Hombres:</b> {h} &nbsp;&nbsp; <b>Mujeres:</b> {mcount}</div>
+              <div style="margin-top:6px;"><b>Cursos:</b></div>
+              <div style="white-space: pre-wrap;">{cursos}</div>
+            </div>
+            """
+            radius = 6 + min(18, max(1, matric) * 0.05)
+
+        popup = folium.Popup(html, max_width=460)
+
+        folium.CircleMarker(
+            location=[float(r["lat"]), float(r["lon"])],
+            radius=radius,
+            weight=2,
+            color=colors["stroke"],
+            fill=True,
+            fill_color=colors["fill"],
+            fill_opacity=0.60,
+            tooltip=tooltip,
+            popup=popup
+        ).add_to(m)
+
+    st.markdown("<div class='mapwrap'>", unsafe_allow_html=True)
+    st_folium(m, use_container_width=True, height=height_px)
+    st.markdown("</div>", unsafe_allow_html=True)
+# =========================
+# DATASET 3: CENTROS PREVENTIVOS COMUNITARIOS (sin provincia -> se asigna)
+# =========================
+CENTROS_ROWS = [
+    (40,  "Alajuela / Vistas de Santamaria", "Centro Preventivo Comunitario"),
+    (25,  "Alajuela / Los Cocos", "Community Prevention Center"),
+    (60,  "Alajuelita / San Felipe", "Safe Space"),
+    (40,  "Alajuelita / Centro", "Casa de Creación Juvenil"),
+    (40,  "Corredores/ Sabalito", "Safe Space"),
+    (40,  "Coto Brus", "Safe Space"),
     (100, "Curridabat", "Human Center of Development La Cometa"),
-    (50, "Desamparados", "Civic Center of Peace & Desamparados Municipality"),
+    (50,  "Desamparados", "Civic Center of Peace & Desamparados Municipality"),
     (350, "Desamparados/ Los Guido", "Safe Space"),
-    (60, "Guatuso", "Safe Space"),
+    (60,  "Guatuso", "Safe Space"),
     (100, "Heredia", "Community Prevention Center"),
     (100, "La Cruz Santa Cecilia", "Safe Space"),
-    (80, "La Cruz/ Centro", "Safe Space"),
-    (30, "Limon/ Pueblo Nuevo", "Community Prevention Center: Youth Center"),
+    (80,  "La Cruz/ Centro", "Safe Space"),
+    (30,  "Limon/ Pueblo Nuevo", "Community Prevention Center: Youth Center"),
     (150, "Limon/ Cieneguita", "Community Prevention Center/ Safe Space/ Surf Boxing"),
-    (15, "Limón/ Limoncito", "Community Prevention Center/ Safe Space"),
-    (30, "Limón / Valle de la Estrella", "Colectivo deportivo Valle de la Estrella"),
+    (15,  "Limón/ Limoncito", "Community Prevention Center/ Safe Space"),
+    (30,  "Limón / Valle de la Estrella", "Colectivo deportivo Valle de la Estrella"),
     (100, "Limon/ Cocos", "Asoc de Futbol Club Atlético Limonense"),
     (150, "Los Chiles / Muelle", "Centro Preventivo Comunitario"),
     (100, "Los Chiles / La Virgen", "Safe Space"),
-    (50, "Matina/ Estrada", "Safe Space"),
-    (55, "Matina / Luzon", "Safe Space"),
-    (75, "Montes de Oca", "Community Prevention Center / Circo Social de Sinaí"),
-    (60, "Mora", "Casa de la Juventud/Club House"),
-    (45, "Osa/ Bahia Ballena", "Centro Preventivo Comunitario"),
-    (20, "Pococi/ la Sole", "ADI Sole, DINADECO, UNICEF, PANI, INL"),
-    (100, "Puntarenas/ Barranca", "Centro Preventivo Comunitario / ONG Barranca Sport Club"),
-    (15, "Puntarenas/ Chacarita", "Safe Space"),
-    (50, "Puntarenas/ Fray Casiano", "Safe Space"),
-    (20, "Quepos/ Pies Mojados", "Safe Space"),
-    (70, "San Carlos", "Civic Center of Peace"),
-    (40, "San José/ Pavas", "Safe Space"),
-    (30, "San José/ Hatillo", "Safe Space"),
+    (50,  "Matina/ Estrada", "Safe Space"),
+    (55,  "Matina / Luzon", "Safe Space"),
+    (75,  "Montes de Oca", "Community Prevention Center /Circo Social de Sinaí"),
+    (60,  "Mora", "Casa de la Juventud/Club House"),
+    (45,  "Osa/ Bahia Ballena", "Centro Preventivo Comunitario"),
+    (20,  "Pococi/ la Sole", "ADI Sole, DINADECO, UNICEF, PANI, INL"),
+    (100, "Puntarenas/ Barranca", "Centro Preventivo Comunitario  ONG Barranca Sport Club"),
+    (15,  "Puntarenas/ Chacarita", "Safe Space"),
+    (50,  "Puntarenas/ Fray Casiano", "Safe Space"),
+    (20,  "Quepos /Pies Mojados", "Safe Space"),
+    (70,  "San Carlos", "Civic Center of Peace"),
+    (40,  "San José/ Pavas", "Safe Space"),
+    (30,  "San José / Hatillo", "Safe Space"),
     (150, "San José / Carpio", "Safe Space"),
-    (25, "San Ramón", "Safe Space"),
+    (25,  "San Ramón", "Safe Space"),
     (100, "Santa Ana", "Casita de Escucha Corazón de Jesús"),
     (100, "Santa Ana", "Casita de Escucha El Triunfo"),
-    (40, "Sarapiquí / llanuras de Gaspar", "Safe Space"),
-    (40, "Sarapiquí / puerto Viejo", "Safe Space"),
-    (15, "Siquirres/ 3 Cercas", "Safe Space"),
-    (25, "Turrialba", "Community Prevention Center"),
-    (52, "Turrubares", "Safe Space"),
-    (20, "Upala/ Mexico", "Safe Space"),
-    (30, "Upala/ La Real", "Safe Space"),
+    (40,  "Sarapiquí / llanuras de Gaspar", "Safe Space"),
+    (40,  "Sarapiquí / puerto Viejo", "Safe Space"),
+    (15,  "Siquirres/ 3 Cercas", "Safe Space"),
+    (25,  "Turrialba", "Community Prevention Center"),
+    (52,  "Turrubares", "Safe Space"),
+    (20,  "Upala/Mexico", "Safe Space"),
+    (30,  "Upala/ La Real", "Safe Space"),
 ]
 
-def build_cpc_df() -> pd.DataFrame:
-    rows = []
-    for benef, canton_raw, centro in CPC_ROWS:
-        canton = parse_canton_only(canton_raw)
-        canton = canton.replace("San José", "San Jose").replace("Limón", "Limon").replace("San Ramón", "San Ramon")
-        canton = canton.replace("Sarapiquí", "Sarapiqui")
-        prov = CANTON_TO_PROV.get(canton, "San Jose")
-        rows.append({
-            "provincia": prov,
-            "canton": canton,
-            "centro": clean_txt(centro),
-            "beneficiarios": safe_int(benef),
-        })
-    df = pd.DataFrame(rows)
-    df["lat"] = df["canton"].map(lambda x: CANTON_COORDS.get(x, (None, None))[0])
-    df["lon"] = df["canton"].map(lambda x: CANTON_COORDS.get(x, (None, None))[1])
-    return df
+df_centros = pd.DataFrame(CENTROS_ROWS, columns=["beneficiarios", "canton_raw", "centro"])
+df_centros["canton"] = df_centros["canton_raw"].apply(extract_main_canton)
+df_centros = ensure_provincia(df_centros, canton_col="canton")
+df_centros = add_coords(df_centros, canton_col="canton")
 
-df_cpc = build_cpc_df()
-# ============================== PARTE 3/4 ==============================
+df_centros["beneficiarios"] = pd.to_numeric(df_centros["beneficiarios"], errors="coerce").fillna(0).astype(int)
+
 # =========================
-# DATOS — PESTAÑA 4: PROGRAMAS DE EMPLEABILIDAD (SIN PROVINCIA -> SE ASIGNA)
+# DATASET 4: PROGRAMAS DE EMPLEABILIDAD (sin provincia -> se asigna)
 # =========================
-EMP_ROWS = [
-    # Canton, Cursos, Matriculadas, Egresadas, H, M
-    ("Cartago 1", "Aseo y Limpieza de Espacios Comerciales | Servicio al Cliente | Manejo de Vehículos Pesados", "100", "95", "36", "59"),
-    ("Cartago 2", "Aseo y Limpieza de Espacios Comerciales | Servicio al Cliente | Buenas Prácticas de Manufactura BPM | Operario de Construcción", "100", "113", "26", "87"),
-    ("Turrialba 1", "Servicio al Cliente y Ventas | Aseo y Limpieza de Espacios Comerciales | Pistero de Gasolinera", "100", "88", "61", "27"),
-    ("Turrialba 2", "Servicio al Cliente y Ventas | Aseo y Limpieza de Espacios Comerciales | Pistero de Gasolinera | Buenas Prácticas de Manufactura BPM", "100", "71", "48", "23"),
-    ("Puntarenas 1", "Buenas Prácticas de Manufactura BPM | Auxiliar de Bodega | Atención y Servicio al Cliente para Salonero | Pistero de Gasolinera | Aseo y Limpieza en Hotelería", "100", "88", "27", "61"),
-    ("Limon 1", "Aseo y Limpieza Cabinas y Hoteles | Servicio al Cliente para Comercio | Auxiliar de Bodega | Pistero de Gasolinera", "100", "89", "20", "69"),
-    ("Abangares", "Auxiliar de cocina | Servicio al Cliente y ventas", "30", "31", "6", "25"),
-    ("Pococi 1", "Buenas Prácticas de Manufactura con énfasis en industria alimentaria | Auxiliar de Bodega", "100", "97", "52", "45"),
-    ("Desamparados", "Servicio al cliente con énfasis en ferretería | Buenas Prácticas de Manufactura con énfasis en industria alimentaria | Auxiliar de Bodega", "100", "83", "30", "53"),
-    ("La Unión", "Buenas Prácticas de Manufactura con énfasis en industria alimentaria | Auxiliar de Bodega | Aseo y Limpieza de locales comerciales", "100", "85", "36", "49"),
-    ("Curridabat", "Buenas Prácticas de Manufactura con énfasis en industria alimentaria | Auxiliar de Bodega | Aseo y Limpieza de locales comerciales", "100", "73", "23", "50"),
-    ("Puntarenas 2", "Buenas Prácticas de Manufactura BPM | Auxiliar de Bodega | Atención y Servicio al Cliente para Salonero | Pistero de Gasolinera | Aseo y Limpieza en Hotelería", "100", "100", "25", "75"),
-    ("Limon 2", "Servicio al cliente con énfasis en ferretería | Saloneros | Auxiliar de Bodega", "100", "78", "26", "52"),
-    ("Alajuela", "Buenas Prácticas de Manufactura en Industria Alimentaria | Servicio y Atención en Hotelería y Centros de Alojamiento", "100", "87", "45", "42"),
-    ("Upala", "Operario Agrícola | Servicio y Atención en Hotelería y Centros de Alojamiento", "100", "89", "31", "58"),
-    ("Oreamuno", "Buenas Prácticas de Manufactura con énfasis en industria alimentaria", "30", "31", "6", "25"),
-    ("Pococi 2", "Servicio al cliente con énfasis en Cajas | Auxiliar de bodega | Auxiliar de cocina | Aseo y Limpieza de locales comerciales", "100", "100", "19", "81"),
-    ("Turrialba 3", "Buenas Prácticas de Manufactura en Industria Alimentaria", "50", "50", "0", "0"),
-    ("Mora", "Salonero - Bartender | Cuidadoras de niños | Auxiliar de Bodega", "40", "40", "7", "33"),
-    ("Goicoechea", "Buenas Prácticas de Manufactura en Industria Alimentaria | Servicio y Atención en Hotelería y Centros de Alojamiento", "58", "0", "10", "48"),
-    ("Santa Cruz", "Servicios de Hotelería y Centros de Alojamiento", "50", "29", "0", "0"),
-    ("La Cruz", "Peón de finca | Atención en Hotelería y Centros de Alojamiento", "50", "0", "0", "0"),
-    ("Bagaces", "Servicios de Hotelería y Centros de Alojamiento", "50", "47", "0", "0"),
+EMPLEA_ROWS = [
+    ("Cartago", "Aseo y Limpieza de Espacios Comerciales\nServicio al Cliente\nManejo de Vehículos Pesados", 100, 95, 36, 59),
+    ("Cartago", "Aseo y Limpieza de Espacios Comerciales\nServicio al Cliente\nBuenas Prácticas de Manufactura BPM\nOperario de Construcción", 100, 113, 26, 87),
+    ("Turrialba", "Servicio al Cliente y Ventas\nAseo y Limpieza de Espacios Comerciales\nPistero de Gasolinera", 100, 88, 61, 27),
+    ("Turrialba", "Servicio al Cliente y Ventas\nAseo y Limpieza de Espacios Comerciales\nPistero de Gasolinera\nBuenas Prácticas de Manufactura BPM", 100, 71, 48, 23),
+    ("Puntarenas", "Buenas Prácticas de Manufactura BPM\nAuxiliar de Bodega\nAtención y Servicio al Cliente para Salonero\nPistero de Gasolinera\nAseo y Limpieza en Hotelería", 100, 88, 27, 61),
+    ("Limon", "Aseo y Limpieza Cabinas y Hoteles\nServicio al Cliente para Comercio\nAuxiliar de Bodega\nPistero de Gasolinera", 100, 89, 20, 69),
+    ("Abangares", "Auxiliar de cocina\nServicio al Cliente y ventas", 30, 31, 6, 25),
+    ("Pococi", "Buenas Prácticas de Manufactura con énfasis en industria alimentaria\nAuxiliar de Bodega", 100, 97, 52, 45),
+    ("Desamparados", "Servicio al cliente con énfasis en ferretería\nBuenas Prácticas de Manufactura con énfasis en industria alimentaria\nAuxiliar de Bodega", 100, 83, 30, 53),
+    ("La Union", "Buenas Prácticas de Manufactura con énfasis en industria alimentaria\nAuxiliar de Bodega\nAseo y Limpieza de locales comerciales", 100, 85, 36, 49),
+    ("Curridabat", "Buenas Prácticas de Manufactura con énfasis en industria alimentaria\nAuxiliar de Bodega\nAseo y Limpieza de locales comerciales", 100, 73, 23, 50),
+    ("Puntarenas", "Buenas Prácticas de Manufactura BPM\nAuxiliar de Bodega\nAtención y Servicio al Cliente para Salonero\nPistero de Gasolinera\nAseo y Limpieza en Hotelería", 100, 100, 25, 75),
+    ("Limon", "Servicio al cliente con énfasis en ferretería\nSaloneros\nAuxiliar de Bodega", 100, 78, 26, 52),
+    ("Alajuela", "Buenas Prácticas de Manufactura en Industria Alimentaria\nAuxiliar de Bodega", 100, 87, 45, 42),
+    ("Upala", "Operario Agrícola\nServicio y Atención en Hotelería y Centros de Alojamiento", 100, 89, 31, 58),
+    ("Oreamuno", "Buenas Prácticas de Manufactura con énfasis en industria alimentaria", 30, 31, 6, 25),
+    ("Pococi", "Servicio al cliente con énfasis en Cajas\nAuxiliar de bodega\nAuxiliar de cocina\nAseo y Limpieza de locales comerciales", 100, 100, 19, 81),
+    ("Mora", "Salonero-Bartender\nCuidadoras de niños\nAuxiliar de Bodega", 40, 40, 7, 33),
+    ("Goicoechea", "Buenas prácticas de Manufactura en Industria Alimentaria\nServicio y Atención en Hotelería y Centros de Alojamiento", 75, 69, 0, 75),
+    ("Goicoechea", "Buenas prácticas de Manufactura en Industria Alimentaria\nServicio y Atención en Hotelería y Centros de Alojamiento", 58, 0, 10, 48),
+    ("Santa Cruz", "Servicios de Hotelería y Centros de Alojamiento", 50, 29, 0, 0),
+    ("La Cruz", "Peón de finca, Atención en Hotelería y Centros de Alojamiento", 50, 0, 0, 0),
+    ("Bagaces", "Servicios de Hotelería y Centros de Alojamiento", 50, 47, 0, 0),
 ]
 
-def clean_emp_canton(x: str) -> str:
-    x = clean_txt(x).replace("La Unión", "La Union").replace("Limón", "Limon")
-    # casos "Cartago 1/2", "Puntarenas 1/2", "Limon 1/2", "Pococi 1/2", "Turrialba 1/2/3"
-    base = re.sub(r"\s+\d+$", "", x).strip()
-    return base
+df_empleo = pd.DataFrame(EMPLEA_ROWS, columns=["canton_raw", "cursos", "matriculadas", "egresadas", "hombres", "mujeres"])
+df_empleo["canton"] = df_empleo["canton_raw"].apply(extract_main_canton)
+df_empleo = ensure_provincia(df_empleo, canton_col="canton")
+df_empleo = add_coords(df_empleo, canton_col="canton")
 
-def build_emp_df() -> pd.DataFrame:
-    rows = []
-    for canton_raw, cursos, mat, egr, h, m in EMP_ROWS:
-        canton_base = clean_emp_canton(canton_raw)
-        prov = CANTON_TO_PROV.get(canton_base, "San Jose")
-        rows.append({
-            "provincia": prov,
-            "canton": canton_base,
-            "sede": clean_txt(canton_raw),
-            "cursos": clean_txt(cursos),
-            "matriculadas": safe_int(mat),
-            "egresadas": safe_int(egr),
-            "hombres": safe_int(h),
-            "mujeres": safe_int(m),
-        })
-    df = pd.DataFrame(rows)
-    df["lat"] = df["canton"].map(lambda x: CANTON_COORDS.get(x, (None, None))[0])
-    df["lon"] = df["canton"].map(lambda x: CANTON_COORDS.get(x, (None, None))[1])
-    return df
-
-df_emp = build_emp_df()
+df_empleo["matriculadas"] = pd.to_numeric(df_empleo["matriculadas"], errors="coerce").fillna(0).astype(int)
+df_empleo["egresadas_num"] = pd.to_numeric(df_empleo["egresadas"], errors="coerce").fillna(0).astype(int)
+df_empleo["hombres"] = pd.to_numeric(df_empleo["hombres"], errors="coerce").fillna(0).astype(int)
+df_empleo["mujeres"] = pd.to_numeric(df_empleo["mujeres"], errors="coerce").fillna(0).astype(int)
 
 # =========================
-# HELPERS DE ORDEN Y TABLAS
+# HEADER + TABS
 # =========================
-def sort_by_prov_order(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df["__prov_order__"] = df["provincia"].apply(lambda x: PROV_ORDER.index(x) if x in PROV_ORDER else 999)
-    df = df.sort_values(["__prov_order__", "canton"]).drop(columns=["__prov_order__"])
-    return df
+st.markdown("<div class='title'>CR | Mapas y Programas</div>", unsafe_allow_html=True)
+st.markdown("<div class='subtitle'>Mapas satelitales ESRI, filtros por pestaña, tablas normalizadas y descargas ordenadas.</div>", unsafe_allow_html=True)
 
-def make_filter_box(tabkey: str, provincias, cantones, nombres, label_nombre: str):
-    st.markdown("<div class='filterbox'>", unsafe_allow_html=True)
-    st.markdown(f"<div class='filtertitle'>Filtros — {tabkey}</div>", unsafe_allow_html=True)
+tab1, tab2, tab3, tab4 = st.tabs([
+    "Estructuras criminales",
+    "Bandas Musicales",
+    "Centros Preventivos Comunitarios",
+    "Programas de empleabilidad",
+])
 
-    c1, c2 = st.columns(2)
+# =========================
+# TAB 1: ESTRUCTURAS
+# =========================
+with tab1:
+    st.markdown("<div class='panel'>", unsafe_allow_html=True)
+    st.subheader("Filtros — Estructuras")
+
+    c1, c2, c3 = st.columns([1, 1, 1], gap="large")
+    provincias = sorted(df_estruct["provincia"].unique().tolist())
+    cantones = sorted(df_estruct["canton"].unique().tolist())
+    estructuras = sorted(df_estruct["estructura"].unique().tolist())
+
     with c1:
-        prov_sel = st.multiselect("Provincia", provincias, default=[], key=f"{tabkey}_prov")
+        prov_sel = st.multiselect("Provincia", provincias, default=[], key="t1_prov")
     with c2:
-        cant_sel = st.multiselect("Cantón", cantones, default=[], key=f"{tabkey}_cant")
+        cant_sel = st.multiselect("Cantón", cantones, default=[], key="t1_cant")
+    with c3:
+        estr_sel = st.multiselect("Estructura", estructuras, default=[], key="t1_estr")
 
-    name_sel = st.multiselect(label_nombre, nombres, default=[], key=f"{tabkey}_name")
-
-    st.markdown("<div class='smallhint'>Los filtros son independientes por pestaña.</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    return prov_sel, cant_sel, name_sel
-
-# =========================
-# RENDER TAB — ESTRUCTURAS
-# =========================
-def render_tab_estructuras():
-    st.markdown("<div class='title'>EstrukturAs criminales</div>", unsafe_allow_html=True)
-    st.markdown("<div class='subtitle'>Mapa satelital ESRI, puntos por cantón y detalle de estructuras por ubicación.</div>", unsafe_allow_html=True)
-
-    data = long_struct.copy()
-    data["provincia"] = data["provincia"].apply(clean_txt)
-    data["canton"] = data["canton"].apply(clean_txt)
-    data["estructura"] = data["estructura"].apply(clean_txt)
-
-    provincias = PROV_ORDER[:]  # orden fijo
-    cantones = sorted(data["canton"].unique().tolist())
-    estructuras = sorted(data["estructura"].unique().tolist())
-
-    prov_sel, cant_sel, estr_sel = make_filter_box("Estructuras", provincias, cantones, estructuras, "Estructura")
-
-    f = data.copy()
+    f1 = df_estruct.copy()
     if prov_sel:
-        f = f[f["provincia"].isin(prov_sel)]
+        f1 = f1[f1["provincia"].isin(prov_sel)]
     if cant_sel:
-        f = f[f["canton"].isin(cant_sel)]
+        f1 = f1[f1["canton"].isin(cant_sel)]
     if estr_sel:
-        f = f[f["estructura"].isin(estr_sel)]
+        f1 = f1[f1["estructura"].isin(estr_sel)]
 
-    cantones_unicos = f["canton"].nunique()
-    estructuras_unicas = f["estructura"].nunique()
+    cantones_unicos = f1["canton"].nunique()
+    estructuras_unicas = f1["estructura"].nunique()
 
     st.markdown(
         f"""
@@ -862,7 +959,28 @@ def render_tab_estructuras():
         unsafe_allow_html=True
     )
 
+    st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<hr/>", unsafe_allow_html=True)
+
+    # Agrupar para mapa (lista de estructuras por cantón)
+    fm1 = f1.dropna(subset=["lat", "lon"]).copy()
+    grp1 = (
+        fm1.groupby(["provincia", "canton", "lat", "lon"])
+        .agg(estructuras_list=("estructura", lambda s: sorted(set(s))))
+        .reset_index()
+    )
+
+    # Fullscreen
+    if st.session_state["map_fullscreen_tab1"]:
+        st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
+        if st.button("⬅️ Salir de pantalla completa", key="t1_exit_full"):
+            st.session_state["map_fullscreen_tab1"] = False
+            st.rerun()
+        st.markdown("<span class='caption'>Modo pantalla completa.</span>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        render_map_generic(grp1, height_px=920, popup_mode="estructuras")
+        st.stop()
 
     left, right = st.columns([1.05, 0.95], gap="large")
 
@@ -871,7 +989,7 @@ def render_tab_estructuras():
         st.subheader("Top 10 estructuras (conteos)")
 
         top_struct = (
-            f.groupby("estructura")
+            f1.groupby("estructura")
             .size()
             .reset_index(name="conteo")
             .sort_values("conteo", ascending=False)
@@ -882,31 +1000,19 @@ def render_tab_estructuras():
         st.plotly_chart(fig_bar, use_container_width=True)
 
         st.subheader("Tabla normalizada")
-
-        tabla_unificada = (
-            f.groupby(["provincia", "canton"])["estructura"]
+        tabla1 = (
+            f1.groupby(["provincia", "canton"])["estructura"]
             .apply(lambda s: ", ".join(sorted(set(s))))
             .reset_index()
-            .rename(columns={"estructura": "Estructuras"})
+            .rename(columns={"estructura": "estructuras"})
         )
-        tabla_unificada = sort_by_prov_order(tabla_unificada)
+        tabla1 = sort_by_provincia(tabla1)
 
         st.dataframe(
-            tabla_unificada[["provincia", "canton", "Estructuras"]],
+            title_case_headers(tabla1),
             use_container_width=True,
             height=360,
             hide_index=True
-        )
-
-        excel_bytes = df_to_pretty_excel_bytes(
-            tabla_unificada.rename(columns={"provincia": "Provincia", "canton": "Canton"}),
-            sheet_name="Estructuras"
-        )
-        st.download_button(
-            "⬇️ Descargar Excel (Estructuras)",
-            data=excel_bytes,
-            file_name="estructuras_normalizado.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
         st.markdown("</div>", unsafe_allow_html=True)
@@ -915,93 +1021,93 @@ def render_tab_estructuras():
         st.markdown("<div class='panel'>", unsafe_allow_html=True)
         st.subheader("Mapa satelital (ESRI) — puntos por cantón")
 
-        def popup_builder_struct(row):
-            # agrupar para popup completo por cantón (lista de estructuras)
-            canton = row["canton"]
-            provincia = row["provincia"]
-            sub = f[(f["provincia"] == provincia) & (f["canton"] == canton)]
-            estructuras_list = sorted(set(sub["estructura"].tolist()))
-            registros = int(len(sub))
-
-            html = f"""
-            <div style="font-family: Arial; font-size: 13px; line-height: 1.25;">
-              <div style="font-size: 14px;"><b>{canton}</b></div>
-              <div><b>Provincia:</b> {provincia}</div>
-              <div><b>Estructuras:</b> {len(estructuras_list)}</div>
-              <div style="margin-top:6px;"><b>Listado:</b></div>
-              <ul style="margin: 6px 0 0 18px; padding: 0;">
-                {''.join([f'<li>{e}</li>' for e in estructuras_list])}
-              </ul>
-            </div>
-            """
-            radius = 6 + min(16, registros * 1.2)
-            return html, radius
-
-        grp = (
-            f.dropna(subset=["lat", "lon"])
-            .groupby(["provincia", "canton", "lat", "lon"])
-            .size()
-            .reset_index(name="n")
-        )
-
-        render_map_points(grp, height_px=820, popup_builder=popup_builder_struct)
+        st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
+        if st.button("⛶ Ver mapa en pantalla completa", key="t1_full"):
+            st.session_state["map_fullscreen_tab1"] = True
+            st.rerun()
+        st.markdown("<span class='caption'>Abre el mapa ocupando casi toda la pantalla.</span>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
+        render_map_generic(grp1, height_px=820, popup_mode="estructuras")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<hr/>", unsafe_allow_html=True)
+
+    # Descargas
+    excel1 = df_to_excel_bytes(tabla1, sheet_name="Estructuras")
+    st.download_button(
+        "⬇️ Descargar Excel (Estructuras)",
+        data=excel1,
+        file_name="estructuras_normalizado.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="dl_xlsx_t1"
+    )
+
+    st.markdown(
+        f"<div class='caption'>Resumen: <b>{estructuras_unicas}</b> estructuras únicas en <b>{cantones_unicos}</b> cantones (según filtros).</div>",
+        unsafe_allow_html=True
+    )
 # =========================
-# RENDER TAB — BANDAS MUSICALES
+# TAB 2: BANDAS MUSICALES
 # =========================
-def render_tab_bandas():
-    st.markdown("<div class='title'>Bandas Musicales</div>", unsafe_allow_html=True)
-    st.markdown("<div class='subtitle'>Mapa satelital ESRI con beneficiarios por cantón y resumen por provincia.</div>", unsafe_allow_html=True)
+with tab2:
+    st.markdown("<div class='panel'>", unsafe_allow_html=True)
+    st.subheader("Filtros — Bandas Musicales")
 
-    data = df_bandas.copy()
-    data["provincia"] = data["provincia"].apply(normalize_prov_name)
-    data["canton"] = data["canton"].apply(lambda x: clean_txt(x).replace("San José", "San Jose").replace("Limón", "Limon"))
-    data["nombre"] = data["nombre"].apply(clean_txt)
-    data["beneficiarios"] = data["beneficiarios"].apply(safe_int)
+    c1, c2, c3 = st.columns([1, 1, 1], gap="large")
+    provincias2 = sorted(df_bandas["provincia"].unique().tolist())
+    cantones2 = sorted(df_bandas["canton"].unique().tolist())
+    nombres2 = sorted(df_bandas["nombre"].unique().tolist())
 
-    provincias = PROV_ORDER[:]
-    cantones = sorted(data["canton"].unique().tolist())
-    nombres = sorted(data["nombre"].unique().tolist())
+    with c1:
+        prov_sel2 = st.multiselect("Provincia", provincias2, default=[], key="t2_prov")
+    with c2:
+        cant_sel2 = st.multiselect("Cantón", cantones2, default=[], key="t2_cant")
+    with c3:
+        name_sel2 = st.multiselect("Nombre", nombres2, default=[], key="t2_name")
 
-    prov_sel, cant_sel, name_sel = make_filter_box("Bandas", provincias, cantones, nombres, "Nombre de club o banda")
+    f2 = df_bandas.copy()
+    if prov_sel2:
+        f2 = f2[f2["provincia"].isin(prov_sel2)]
+    if cant_sel2:
+        f2 = f2[f2["canton"].isin(cant_sel2)]
+    if name_sel2:
+        f2 = f2[f2["nombre"].isin(name_sel2)]
 
-    f = data.copy()
-    if prov_sel:
-        f = f[f["provincia"].isin(prov_sel)]
-    if cant_sel:
-        f = f[f["canton"].isin(cant_sel)]
-    if name_sel:
-        f = f[f["nombre"].isin(name_sel)]
-
-    total_benef = int(f["beneficiarios"].sum())
-    cantones_unicos = f["canton"].nunique()
-    programas = len(f)
+    cantones_unicos2 = f2["canton"].nunique()
+    total_benef2 = int(f2["beneficiarios_num"].sum())
 
     st.markdown(
         f"""
         <div class="kpi-grid">
           <div class="kpi kpi-a">
             <div class="kpi-label">Cantones</div>
-            <div class="kpi-value">{cantones_unicos:,}</div>
+            <div class="kpi-value">{cantones_unicos2:,}</div>
             <div class="kpi-sub">Total según filtros</div>
-          </div>
-          <div class="kpi kpi-b">
-            <div class="kpi-label">Registros</div>
-            <div class="kpi-value">{programas:,}</div>
-            <div class="kpi-sub">Bandas/clubes según filtros</div>
           </div>
           <div class="kpi kpi-c">
             <div class="kpi-label">Beneficiarios</div>
-            <div class="kpi-value">{total_benef:,}</div>
-            <div class="kpi-sub">Suma total según filtros</div>
+            <div class="kpi-value">{total_benef2:,}</div>
+            <div class="kpi-sub">Suma según filtros</div>
           </div>
         </div>
         """,
         unsafe_allow_html=True
     )
-
+    st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<hr/>", unsafe_allow_html=True)
+
+    # Fullscreen
+    if st.session_state["map_fullscreen_tab2"]:
+        st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
+        if st.button("⬅️ Salir de pantalla completa", key="t2_exit_full"):
+            st.session_state["map_fullscreen_tab2"] = False
+            st.rerun()
+        st.markdown("<span class='caption'>Modo pantalla completa.</span>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        render_map_generic(f2.dropna(subset=["lat", "lon"]), height_px=920, popup_mode="bandas")
+        st.stop()
 
     left, right = st.columns([1.05, 0.95], gap="large")
 
@@ -1010,139 +1116,122 @@ def render_tab_bandas():
         st.subheader("Beneficiarios por provincia")
 
         prov_sum = (
-            f.groupby("provincia")["beneficiarios"].sum()
-            .reindex(PROV_ORDER)
-            .fillna(0)
-            .reset_index()
+            f2.groupby("provincia")["beneficiarios_num"]
+            .sum()
+            .reset_index(name="beneficiarios")
         )
+        prov_sum["__ord__"] = prov_sum["provincia"].apply(lambda x: PROV_ORDER.index(x) if x in PROV_ORDER else 999)
+        prov_sum = prov_sum.sort_values("__ord__").drop(columns=["__ord__"])
+
         fig = px.bar(prov_sum, x="provincia", y="beneficiarios")
         fig.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10))
         st.plotly_chart(fig, use_container_width=True)
 
         st.subheader("Tabla normalizada")
-
-        tabla = (
-            f.groupby(["provincia", "canton"])
+        tabla2 = (
+            f2.groupby(["provincia", "canton"])
             .agg(
-                Beneficiarios=("beneficiarios", "sum"),
-                Bandas=("nombre", lambda s: ", ".join(sorted(set(s))))
+                beneficiarios=("beneficiarios_num", "sum"),
+                nombres=("nombre", lambda s: ", ".join(sorted(set(s))))
             )
             .reset_index()
         )
-        tabla = sort_by_prov_order(tabla)
+        tabla2 = sort_by_provincia(tabla2)
 
         st.dataframe(
-            tabla[["provincia", "canton", "Beneficiarios", "Bandas"]],
+            title_case_headers(tabla2[["provincia", "canton", "beneficiarios", "nombres"]]),
             use_container_width=True,
             height=360,
             hide_index=True
         )
-
-        excel_bytes = df_to_pretty_excel_bytes(
-            tabla.rename(columns={"provincia": "Provincia", "canton": "Canton"}),
-            sheet_name="Bandas"
-        )
-        st.download_button(
-            "⬇️ Descargar Excel (Bandas)",
-            data=excel_bytes,
-            file_name="bandas_musicales.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
         st.markdown("<div class='panel'>", unsafe_allow_html=True)
-        st.subheader("Mapa satelital (ESRI) — beneficiarios por cantón")
+        st.subheader("Mapa satelital (ESRI) — bandas y beneficiarios")
 
-        grp = (
-            f.dropna(subset=["lat", "lon"])
-            .groupby(["provincia", "canton", "lat", "lon"])
-            .agg(
-                beneficiarios=("beneficiarios", "sum"),
-                nombres=("nombre", lambda s: sorted(set(s)))
-            )
-            .reset_index()
-        )
-
-        def popup_builder_bandas(row):
-            canton = row["canton"]
-            provincia = row["provincia"]
-            benef = int(row["beneficiarios"])
-            nombres = row["nombres"]
-
-            html = f"""
-            <div style="font-family: Arial; font-size: 13px; line-height: 1.25;">
-              <div style="font-size: 14px;"><b>{canton}</b></div>
-              <div><b>Provincia:</b> {provincia}</div>
-              <div><b>Beneficiarios:</b> {benef:,}</div>
-              <div style="margin-top:6px;"><b>Bandas:</b></div>
-              <ul style="margin: 6px 0 0 18px; padding: 0;">
-                {''.join([f'<li>{n}</li>' for n in nombres])}
-              </ul>
-            </div>
-            """
-            radius = 6 + min(20, max(1, benef) / 20)
-            return html, radius
-
-        render_map_points(grp, height_px=820, popup_builder=popup_builder_bandas)
+        st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
+        if st.button("⛶ Ver mapa en pantalla completa", key="t2_full"):
+            st.session_state["map_fullscreen_tab2"] = True
+            st.rerun()
+        st.markdown("<span class='caption'>Puntos con color por provincia, popup con cantón y beneficiarios.</span>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
-# ============================== PARTE 4/4 ==============================
+
+        render_map_generic(f2.dropna(subset=["lat", "lon"]), height_px=820, popup_mode="bandas")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<hr/>", unsafe_allow_html=True)
+
+    excel2 = df_to_excel_bytes(tabla2[["provincia", "canton", "beneficiarios", "nombres"]], sheet_name="Bandas")
+    st.download_button(
+        "⬇️ Descargar Excel (Bandas Musicales)",
+        data=excel2,
+        file_name="bandas_musicales.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="dl_xlsx_t2"
+    )
+
 # =========================
-# RENDER TAB — CENTROS PREVENTIVOS COMUNITARIOS
+# TAB 3: CENTROS PREVENTIVOS COMUNITARIOS
 # =========================
-def render_tab_cpc():
-    st.markdown("<div class='title'>Centros Preventivos Comunitarios</div>", unsafe_allow_html=True)
-    st.markdown("<div class='subtitle'>Mapa satelital ESRI con beneficiarios por cantón, colores por provincia y filtros independientes.</div>", unsafe_allow_html=True)
+with tab3:
+    st.markdown("<div class='panel'>", unsafe_allow_html=True)
+    st.subheader("Filtros — Centros Preventivos Comunitarios")
 
-    data = df_cpc.copy()
-    data["provincia"] = data["provincia"].apply(clean_txt)
-    data["canton"] = data["canton"].apply(clean_txt)
-    data["centro"] = data["centro"].apply(clean_txt)
-    data["beneficiarios"] = data["beneficiarios"].apply(safe_int)
+    c1, c2, c3 = st.columns([1, 1, 1], gap="large")
+    provincias3 = sorted(df_centros["provincia"].unique().tolist())
+    cantones3 = sorted(df_centros["canton"].unique().tolist())
+    centros3 = sorted(df_centros["centro"].unique().tolist())
 
-    provincias = PROV_ORDER[:]
-    cantones = sorted(data["canton"].unique().tolist())
-    centros = sorted(data["centro"].unique().tolist())
+    with c1:
+        prov_sel3 = st.multiselect("Provincia", provincias3, default=[], key="t3_prov")
+    with c2:
+        cant_sel3 = st.multiselect("Cantón", cantones3, default=[], key="t3_cant")
+    with c3:
+        centro_sel3 = st.multiselect("Nombre del centro", centros3, default=[], key="t3_centro")
 
-    prov_sel, cant_sel, name_sel = make_filter_box("CPC", provincias, cantones, centros, "Nombre del centro")
+    f3 = df_centros.copy()
+    if prov_sel3:
+        f3 = f3[f3["provincia"].isin(prov_sel3)]
+    if cant_sel3:
+        f3 = f3[f3["canton"].isin(cant_sel3)]
+    if centro_sel3:
+        f3 = f3[f3["centro"].isin(centro_sel3)]
 
-    f = data.copy()
-    if prov_sel:
-        f = f[f["provincia"].isin(prov_sel)]
-    if cant_sel:
-        f = f[f["canton"].isin(cant_sel)]
-    if name_sel:
-        f = f[f["centro"].isin(name_sel)]
-
-    total_benef = int(f["beneficiarios"].sum())
-    cantones_unicos = f["canton"].nunique()
-    registros = len(f)
+    cantones_unicos3 = f3["canton"].nunique()
+    total_benef3 = int(f3["beneficiarios"].sum())
 
     st.markdown(
         f"""
         <div class="kpi-grid">
           <div class="kpi kpi-a">
             <div class="kpi-label">Cantones</div>
-            <div class="kpi-value">{cantones_unicos:,}</div>
+            <div class="kpi-value">{cantones_unicos3:,}</div>
             <div class="kpi-sub">Total según filtros</div>
-          </div>
-          <div class="kpi kpi-b">
-            <div class="kpi-label">Registros</div>
-            <div class="kpi-value">{registros:,}</div>
-            <div class="kpi-sub">Centros según filtros</div>
           </div>
           <div class="kpi kpi-c">
             <div class="kpi-label">Beneficiarios</div>
-            <div class="kpi-value">{total_benef:,}</div>
-            <div class="kpi-sub">Suma total según filtros</div>
+            <div class="kpi-value">{total_benef3:,}</div>
+            <div class="kpi-sub">Suma según filtros</div>
           </div>
         </div>
         """,
         unsafe_allow_html=True
     )
-
+    st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<hr/>", unsafe_allow_html=True)
+
+    # Fullscreen
+    if st.session_state["map_fullscreen_tab3"]:
+        st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
+        if st.button("⬅️ Salir de pantalla completa", key="t3_exit_full"):
+            st.session_state["map_fullscreen_tab3"] = False
+            st.rerun()
+        st.markdown("<span class='caption'>Modo pantalla completa.</span>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        render_map_generic(f3.dropna(subset=["lat", "lon"]), height_px=920, popup_mode="centros")
+        st.stop()
 
     left, right = st.columns([1.05, 0.95], gap="large")
 
@@ -1150,133 +1239,110 @@ def render_tab_cpc():
         st.markdown("<div class='panel'>", unsafe_allow_html=True)
         st.subheader("Beneficiarios por provincia")
 
-        prov_sum = (
-            f.groupby("provincia")["beneficiarios"].sum()
-            .reindex(PROV_ORDER)
-            .fillna(0)
-            .reset_index()
+        prov_sum3 = (
+            f3.groupby("provincia")["beneficiarios"]
+            .sum()
+            .reset_index(name="beneficiarios")
         )
-        fig = px.bar(prov_sum, x="provincia", y="beneficiarios")
-        fig.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10))
-        st.plotly_chart(fig, use_container_width=True)
+        prov_sum3["__ord__"] = prov_sum3["provincia"].apply(lambda x: PROV_ORDER.index(x) if x in PROV_ORDER else 999)
+        prov_sum3 = prov_sum3.sort_values("__ord__").drop(columns=["__ord__"])
+
+        fig3 = px.bar(prov_sum3, x="provincia", y="beneficiarios")
+        fig3.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(fig3, use_container_width=True)
 
         st.subheader("Tabla normalizada")
-
-        tabla = (
-            f.groupby(["provincia", "canton"])
+        tabla3 = (
+            f3.groupby(["provincia", "canton"])
             .agg(
-                Beneficiarios=("beneficiarios", "sum"),
-                Centros=("centro", lambda s: ", ".join(sorted(set(s))))
+                beneficiarios=("beneficiarios", "sum"),
+                centros=("centro", lambda s: ", ".join(sorted(set(s))))
             )
             .reset_index()
         )
-        tabla = sort_by_prov_order(tabla)
+        tabla3 = sort_by_provincia(tabla3)
 
         st.dataframe(
-            tabla[["provincia", "canton", "Beneficiarios", "Centros"]],
+            title_case_headers(tabla3[["provincia", "canton", "beneficiarios", "centros"]]),
             use_container_width=True,
             height=360,
             hide_index=True
-        )
-
-        excel_bytes = df_to_pretty_excel_bytes(
-            tabla.rename(columns={"provincia": "Provincia", "canton": "Canton"}),
-            sheet_name="CPC"
-        )
-        st.download_button(
-            "⬇️ Descargar Excel (CPC)",
-            data=excel_bytes,
-            file_name="centros_preventivos_comunitarios.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
         st.markdown("<div class='panel'>", unsafe_allow_html=True)
-        st.subheader("Mapa satelital (ESRI) — beneficiarios por cantón")
+        st.subheader("Mapa satelital (ESRI) — centros y beneficiarios")
 
-        grp = (
-            f.dropna(subset=["lat", "lon"])
-            .groupby(["provincia", "canton", "lat", "lon"])
-            .agg(
-                beneficiarios=("beneficiarios", "sum"),
-                centros=("centro", lambda s: sorted(set(s)))
-            )
-            .reset_index()
-        )
-
-        def popup_builder_cpc(row):
-            canton = row["canton"]
-            provincia = row["provincia"]
-            benef = int(row["beneficiarios"])
-            centros = row["centros"]
-
-            html = f"""
-            <div style="font-family: Arial; font-size: 13px; line-height: 1.25;">
-              <div style="font-size: 14px;"><b>{canton}</b></div>
-              <div><b>Provincia:</b> {provincia}</div>
-              <div><b>Beneficiarios:</b> {benef:,}</div>
-              <div style="margin-top:6px;"><b>Centros:</b></div>
-              <ul style="margin: 6px 0 0 18px; padding: 0;">
-                {''.join([f'<li>{c}</li>' for c in centros])}
-              </ul>
-            </div>
-            """
-            radius = 6 + min(20, max(1, benef) / 25)
-            return html, radius
-
-        render_map_points(grp, height_px=820, popup_builder=popup_builder_cpc)
+        st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
+        if st.button("⛶ Ver mapa en pantalla completa", key="t3_full"):
+            st.session_state["map_fullscreen_tab3"] = True
+            st.rerun()
+        st.markdown("<span class='caption'>Popup con cantón, centro y beneficiarios.</span>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
+        render_map_generic(f3.dropna(subset=["lat", "lon"]), height_px=820, popup_mode="centros")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<hr/>", unsafe_allow_html=True)
+
+    excel3 = df_to_excel_bytes(tabla3[["provincia", "canton", "beneficiarios", "centros"]], sheet_name="Centros")
+    st.download_button(
+        "⬇️ Descargar Excel (Centros Preventivos)",
+        data=excel3,
+        file_name="centros_preventivos.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="dl_xlsx_t3"
+    )
+
 # =========================
-# RENDER TAB — PROGRAMAS DE EMPLEABILIDAD (NUEVO)
+# TAB 4: PROGRAMAS DE EMPLEABILIDAD
 # =========================
-def render_tab_empleabilidad():
-    st.markdown("<div class='title'>Programas de empleabilidad</div>", unsafe_allow_html=True)
-    st.markdown("<div class='subtitle'>Mapa satelital ESRI con detalle por sede/cantón y dos gráficas por provincia.</div>", unsafe_allow_html=True)
+with tab4:
+    st.markdown("<div class='panel'>", unsafe_allow_html=True)
+    st.subheader("Filtros — Programas de empleabilidad")
 
-    data = df_emp.copy()
-    data["provincia"] = data["provincia"].apply(clean_txt)
-    data["canton"] = data["canton"].apply(clean_txt)
-    data["sede"] = data["sede"].apply(clean_txt)
-    data["cursos"] = data["cursos"].apply(clean_txt)
+    c1, c2, c3 = st.columns([1, 1, 1], gap="large")
+    provincias4 = sorted(df_empleo["provincia"].unique().tolist())
+    cantones4 = sorted(df_empleo["canton"].unique().tolist())
+    cursos4 = sorted(df_empleo["cursos"].unique().tolist())
 
-    provincias = PROV_ORDER[:]
-    cantones = sorted(data["canton"].unique().tolist())
-    sedes = sorted(data["sede"].unique().tolist())
+    with c1:
+        prov_sel4 = st.multiselect("Provincia", provincias4, default=[], key="t4_prov")
+    with c2:
+        cant_sel4 = st.multiselect("Cantón", cantones4, default=[], key="t4_cant")
+    with c3:
+        curso_sel4 = st.multiselect("Cursos", cursos4, default=[], key="t4_curso")
 
-    prov_sel, cant_sel, sede_sel = make_filter_box("Empleabilidad", provincias, cantones, sedes, "Sede (nombre)")
+    f4 = df_empleo.copy()
+    if prov_sel4:
+        f4 = f4[f4["provincia"].isin(prov_sel4)]
+    if cant_sel4:
+        f4 = f4[f4["canton"].isin(cant_sel4)]
+    if curso_sel4:
+        f4 = f4[f4["cursos"].isin(curso_sel4)]
 
-    f = data.copy()
-    if prov_sel:
-        f = f[f["provincia"].isin(prov_sel)]
-    if cant_sel:
-        f = f[f["canton"].isin(cant_sel)]
-    if sede_sel:
-        f = f[f["sede"].isin(sede_sel)]
-
-    total_mat = int(f["matriculadas"].sum())
-    total_egr = int(f["egresadas"].sum())
-    total_h = int(f["hombres"].sum())
-    total_m = int(f["mujeres"].sum())
+    cantones_unicos4 = f4["canton"].nunique()
+    total_mat = int(f4["matriculadas"].sum())
+    total_egr = int(f4["egresadas_num"].sum())
 
     st.markdown(
         f"""
         <div class="kpi-grid">
           <div class="kpi kpi-a">
+            <div class="kpi-label">Cantones</div>
+            <div class="kpi-value">{cantones_unicos4:,}</div>
+            <div class="kpi-sub">Total según filtros</div>
+          </div>
+          <div class="kpi kpi-b">
             <div class="kpi-label">Matriculadas</div>
             <div class="kpi-value">{total_mat:,}</div>
             <div class="kpi-sub">Suma según filtros</div>
           </div>
-          <div class="kpi kpi-b">
+          <div class="kpi kpi-c">
             <div class="kpi-label">Egresadas</div>
             <div class="kpi-value">{total_egr:,}</div>
-            <div class="kpi-sub">Suma según filtros</div>
-          </div>
-          <div class="kpi kpi-c">
-            <div class="kpi-label">Hombres / Mujeres</div>
-            <div class="kpi-value">{total_h:,} / {total_m:,}</div>
             <div class="kpi-sub">Suma según filtros</div>
           </div>
         </div>
@@ -1284,139 +1350,102 @@ def render_tab_empleabilidad():
         unsafe_allow_html=True
     )
 
+    st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("<hr/>", unsafe_allow_html=True)
+
+    # Fullscreen
+    if st.session_state["map_fullscreen_tab4"]:
+        st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
+        if st.button("⬅️ Salir de pantalla completa", key="t4_exit_full"):
+            st.session_state["map_fullscreen_tab4"] = False
+            st.rerun()
+        st.markdown("<span class='caption'>Modo pantalla completa.</span>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        render_map_generic(f4.dropna(subset=["lat", "lon"]), height_px=920, popup_mode="empleabilidad")
+        st.stop()
 
     left, right = st.columns([1.05, 0.95], gap="large")
 
     with left:
         st.markdown("<div class='panel'>", unsafe_allow_html=True)
+        st.subheader("Gráfico 1 — Matriculadas vs Egresadas (por provincia)")
 
-        st.subheader("Matriculadas vs Egresadas (por provincia)")
-        prov_me = (
-            f.groupby("provincia")[["matriculadas", "egresadas"]].sum()
-            .reindex(PROV_ORDER)
-            .fillna(0)
+        prov_m = (
+            f4.groupby("provincia")[["matriculadas", "egresadas_num"]]
+            .sum()
             .reset_index()
         )
-        prov_me_long = prov_me.melt(id_vars=["provincia"], value_vars=["matriculadas", "egresadas"],
-                                   var_name="tipo", value_name="cantidad")
-        fig1 = px.bar(prov_me_long, x="provincia", y="cantidad", color="tipo", barmode="group")
-        fig1.update_layout(height=330, margin=dict(l=10, r=10, t=10, b=10))
-        st.plotly_chart(fig1, use_container_width=True)
+        prov_m["__ord__"] = prov_m["provincia"].apply(lambda x: PROV_ORDER.index(x) if x in PROV_ORDER else 999)
+        prov_m = prov_m.sort_values("__ord__").drop(columns=["__ord__"])
 
-        st.subheader("Hombres vs Mujeres (por provincia)")
+        prov_m_long = prov_m.melt(id_vars=["provincia"], value_vars=["matriculadas", "egresadas_num"],
+                                 var_name="tipo", value_name="cantidad")
+        prov_m_long["tipo"] = prov_m_long["tipo"].replace({"egresadas_num": "egresadas"})
+
+        fig4a = px.bar(prov_m_long, x="provincia", y="cantidad", color="tipo", barmode="group")
+        fig4a.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(fig4a, use_container_width=True)
+
+        st.subheader("Gráfico 2 — Hombres vs Mujeres (por provincia)")
         prov_hm = (
-            f.groupby("provincia")[["hombres", "mujeres"]].sum()
-            .reindex(PROV_ORDER)
-            .fillna(0)
+            f4.groupby("provincia")[["hombres", "mujeres"]]
+            .sum()
             .reset_index()
         )
+        prov_hm["__ord__"] = prov_hm["provincia"].apply(lambda x: PROV_ORDER.index(x) if x in PROV_ORDER else 999)
+        prov_hm = prov_hm.sort_values("__ord__").drop(columns=["__ord__"])
         prov_hm_long = prov_hm.melt(id_vars=["provincia"], value_vars=["hombres", "mujeres"],
                                     var_name="sexo", value_name="cantidad")
-        fig2 = px.bar(prov_hm_long, x="provincia", y="cantidad", color="sexo", barmode="group")
-        fig2.update_layout(height=330, margin=dict(l=10, r=10, t=10, b=10))
-        st.plotly_chart(fig2, use_container_width=True)
+
+        fig4b = px.bar(prov_hm_long, x="provincia", y="cantidad", color="sexo", barmode="group")
+        fig4b.update_layout(height=360, margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(fig4b, use_container_width=True)
 
         st.subheader("Tabla normalizada")
-
-        tabla = (
-            f.groupby(["provincia", "canton"])
+        tabla4 = (
+            f4.groupby(["provincia", "canton"])
             .agg(
-                Matriculadas=("matriculadas", "sum"),
-                Egresadas=("egresadas", "sum"),
-                Hombres=("hombres", "sum"),
-                Mujeres=("mujeres", "sum"),
-                Cursos=("cursos", lambda s: " | ".join(sorted(set([x for x in s if x]))))
+                matriculadas=("matriculadas", "sum"),
+                egresadas=("egresadas_num", "sum"),
+                hombres=("hombres", "sum"),
+                mujeres=("mujeres", "sum"),
+                cursos=("cursos", lambda s: "\n\n".join(sorted(set(s))))
             )
             .reset_index()
         )
-        tabla = sort_by_prov_order(tabla)
+        tabla4 = sort_by_provincia(tabla4)
 
         st.dataframe(
-            tabla[["provincia", "canton", "Matriculadas", "Egresadas", "Hombres", "Mujeres", "Cursos"]],
+            title_case_headers(tabla4[["provincia", "canton", "matriculadas", "egresadas", "hombres", "mujeres", "cursos"]]),
             use_container_width=True,
             height=360,
             hide_index=True
-        )
-
-        excel_bytes = df_to_pretty_excel_bytes(
-            tabla.rename(columns={"provincia": "Provincia", "canton": "Canton"}),
-            sheet_name="Empleabilidad"
-        )
-        st.download_button(
-            "⬇️ Descargar Excel (Empleabilidad)",
-            data=excel_bytes,
-            file_name="programas_empleabilidad.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
         st.markdown("<div class='panel'>", unsafe_allow_html=True)
-        st.subheader("Mapa satelital (ESRI) — detalle por sede/cantón")
+        st.subheader("Mapa satelital (ESRI) — empleabilidad")
 
-        grp = (
-            f.dropna(subset=["lat", "lon"])
-            .groupby(["provincia", "canton", "lat", "lon"])
-            .agg(
-                matriculadas=("matriculadas", "sum"),
-                egresadas=("egresadas", "sum"),
-                hombres=("hombres", "sum"),
-                mujeres=("mujeres", "sum"),
-                cursos=("cursos", lambda s: sorted(set([x for x in s if x]))),
-                sedes=("sede", lambda s: sorted(set([x for x in s if x]))),
-            )
-            .reset_index()
-        )
-
-        def popup_builder_emp(row):
-            canton = row["canton"]
-            provincia = row["provincia"]
-            mat = int(row["matriculadas"])
-            egr = int(row["egresadas"])
-            h = int(row["hombres"])
-            m = int(row["mujeres"])
-            cursos = row["cursos"]
-            sedes = row["sedes"]
-
-            html = f"""
-            <div style="font-family: Arial; font-size: 13px; line-height: 1.25;">
-              <div style="font-size: 14px;"><b>{canton}</b></div>
-              <div><b>Provincia:</b> {provincia}</div>
-              <div><b>Matriculadas:</b> {mat:,}</div>
-              <div><b>Egresadas:</b> {egr:,}</div>
-              <div><b>Hombres:</b> {h:,} &nbsp;&nbsp; <b>Mujeres:</b> {m:,}</div>
-              <div style="margin-top:6px;"><b>Sedes:</b></div>
-              <ul style="margin: 6px 0 0 18px; padding: 0;">
-                {''.join([f'<li>{s}</li>' for s in sedes])}
-              </ul>
-              <div style="margin-top:6px;"><b>Cursos brindados:</b></div>
-              <ul style="margin: 6px 0 0 18px; padding: 0;">
-                {''.join([f'<li>{c}</li>' for c in cursos])}
-              </ul>
-            </div>
-            """
-            radius = 7 + min(20, max(1, mat) / 25)
-            return html, radius
-
-        render_map_points(grp, height_px=820, popup_builder=popup_builder_emp)
+        st.markdown("<div class='btnrow'>", unsafe_allow_html=True)
+        if st.button("⛶ Ver mapa en pantalla completa", key="t4_full"):
+            st.session_state["map_fullscreen_tab4"] = True
+            st.rerun()
+        st.markdown("<span class='caption'>Popup: matriculadas, egresadas, H/M y cursos brindados.</span>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-# =========================
-# APP PRINCIPAL — PESTAÑAS ARRIBA
-# =========================
-tabs = st.tabs(["EstrukturAs criminales", "Bandas Musicales", "Centros Preventivos Comunitarios", "Programas de empleabilidad"])
+        render_map_generic(f4.dropna(subset=["lat", "lon"]), height_px=820, popup_mode="empleabilidad")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-with tabs[0]:
-    render_tab_estructuras()
+    st.markdown("<hr/>", unsafe_allow_html=True)
 
-with tabs[1]:
-    render_tab_bandas()
-
-with tabs[2]:
-    render_tab_cpc()
-
-with tabs[3]:
-    render_tab_empleabilidad()
-
+    excel4 = df_to_excel_bytes(tabla4[["provincia", "canton", "matriculadas", "egresadas", "hombres", "mujeres", "cursos"]], sheet_name="Empleabilidad")
+    st.download_button(
+        "⬇️ Descargar Excel (Empleabilidad)",
+        data=excel4,
+        file_name="programas_empleabilidad.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="dl_xlsx_t4"
+    )
