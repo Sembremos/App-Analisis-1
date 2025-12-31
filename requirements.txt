@@ -6,6 +6,7 @@ folium
 streamlit-folium
 plotly
 matplotlib
+Workbook
 
 
 
