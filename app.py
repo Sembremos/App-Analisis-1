@@ -685,7 +685,7 @@ with tab_estructuras:
         )
 
         st.dataframe(
-            tabla_unificada[["Provincia", "Cantón", "Estructuras"]],
+            tabla_unificada[["provincia", "canton", "estructuras"]],
             use_container_width=True,
             height=360,
             hide_index=True
@@ -1364,6 +1364,7 @@ with tab_cpc:
         f"<div class='caption'>Resumen: <b>{centros_unicos_c}</b> centros en <b>{cantones_c}</b> cantones. Beneficiarios (sumados): <b>{int(total_benef_c):,}</b>.</div>",
         unsafe_allow_html=True
     )
+
 
 
 
