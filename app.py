@@ -505,7 +505,7 @@ RAW_BY_PROV = {
         ("Rio Cuarto", ["", "", "Los Moreco", "Turesky", "Pollo", "Indio", "Ojos Bellos", "", "", ""]),
     ],
     "Cartago": [
-        ("Cartago", ["Los Maruja", "", "", "", "", "", "", "Chacales", "Pollo", "Turco"]),
+        ("Cartago", ["Los Maruja", "El Gordo Julio", "", "", "", "", "", "Chacales", "Pollo", "Turco"]),
         ("Paraiso", ["Los Maruja", "", "", "", "", "", "", "", "", ""]),
         ("La Union", ["Los Maruja", "", "", "", "", "", "", "Hermanos Gary Gery", "", ""]),
         ("Jimenez", ["Los Maruja", "", "", "", "", "", "", "", "", ""]),
@@ -1449,4 +1449,5 @@ with tab4:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="dl_xlsx_t4"
     )
+
 
